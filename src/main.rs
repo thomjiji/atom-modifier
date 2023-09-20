@@ -10,16 +10,6 @@ fn main() -> std::io::Result<()> {
         eprintln!("Failed to find and write nclc: {}", e);
         e
     })
-
-    // let mut file = OpenOptions::new()
-    //     .read(true)
-    //     .write(true)
-    //     .open("/Users/thom/Desktop/video_stream_oneframe_modified.mov")?;
-    // let p = find_string_position(&mut file, b"gama").expect("Something went wrong");
-    //
-    // println!("{:?}", p);
-    //
-    // Ok(())
 }
 
 fn find_and_write_atom(input_file_path: &str, atom: &str) -> std::io::Result<()> {
@@ -28,7 +18,7 @@ fn find_and_write_atom(input_file_path: &str, atom: &str) -> std::io::Result<()>
         .write(true)
         .open(input_file_path)?;
 
-    if let Some(position) = find_string_position(&mut file, atom.as_bytes())? {
+    if let Some(position) = find_atom_position(&mut file, atom.as_bytes())? {
         // write_bytes_at(&mut file, position + 11, &[0x01, 0x00, 0x01, 0x00, 0x01])?;
         write_bytes_at(&mut file, position + 6, &[0x33, 0x33, 0x00, 0x00])?;
     } else {
@@ -40,7 +30,8 @@ fn find_and_write_atom(input_file_path: &str, atom: &str) -> std::io::Result<()>
     Ok(())
 }
 
-fn find_string_position(f: &mut std::fs::File, s: &[u8]) -> std::io::Result<Option<u64>> {
+/// Find provided atom name's position, returned by decimal.
+fn find_atom_position(f: &mut std::fs::File, s: &[u8]) -> std::io::Result<Option<u64>> {
     const BUFFER_SIZE: usize = 1024;
     let mut buffer = [0; BUFFER_SIZE];
 
