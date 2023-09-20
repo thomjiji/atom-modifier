@@ -1,25 +1,25 @@
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 fn main() -> io::Result<()> {
-    let mut f = File::open("/Users/thom/Desktop/video_stream_oneframe.mov")?;
-    let mut buffer = [0; 10];
+    find_hdlr()
+}
 
-    f.seek(SeekFrom::Start(10)).expect("Something went wrong");
-    f.read_exact(&mut buffer)?;
+fn find_hdlr() -> io::Result<()> {
+    // Open file with write permissions
+    let mut f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/Users/thom/Desktop/video_stream_oneframe_modified.mov")?;
 
-    // Print out bytes in hexadecimal
-    let hexadecimal = buffer
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<String>>()
-        .join(" ");
+    // Seek to the position
+    let position_to_modify = 0x8fe30 + 11;
+    // The position is adjusted counting bytes beginning from offset 0x8fe30.
+    f.seek(SeekFrom::Start(position_to_modify as u64))?;
 
-    let s: String = buffer.iter().map(|&b| b as char).collect();
-
-    println!("{}", s);
-    println!("{}", hexadecimal);
+    // Write new data
+    f.write_all(&[0x01, 0x00, 0x01, 0x00, 0x01])?;
 
     Ok(())
 }
