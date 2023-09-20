@@ -2,24 +2,24 @@ use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 
 fn main() -> std::io::Result<()> {
-    // find_and_write_atom(
-    //     "/Users/thom/Desktop/video_stream_oneframe_modified.mov",
-    //     "gama",
-    // )
-    // .map_err(|e| {
-    //     eprintln!("Failed to find and write nclc: {}", e);
-    //     e
-    // })
+    find_and_write_atom(
+        "/Users/thom/Desktop/video_stream_oneframe_modified.mov",
+        "gama",
+    )
+    .map_err(|e| {
+        eprintln!("Failed to find and write nclc: {}", e);
+        e
+    })
 
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/Users/thom/Desktop/video_stream_oneframe_modified.mov")?;
-    let p = find_string_position(&mut file, b"colr").expect("Something went wrong");
-
-    println!("{:?}", p);
-
-    Ok(())
+    // let mut file = OpenOptions::new()
+    //     .read(true)
+    //     .write(true)
+    //     .open("/Users/thom/Desktop/video_stream_oneframe_modified.mov")?;
+    // let p = find_string_position(&mut file, b"gama").expect("Something went wrong");
+    //
+    // println!("{:?}", p);
+    //
+    // Ok(())
 }
 
 fn find_and_write_atom(input_file_path: &str, atom: &str) -> std::io::Result<()> {
@@ -30,7 +30,7 @@ fn find_and_write_atom(input_file_path: &str, atom: &str) -> std::io::Result<()>
 
     if let Some(position) = find_string_position(&mut file, atom.as_bytes())? {
         // write_bytes_at(&mut file, position + 11, &[0x01, 0x00, 0x01, 0x00, 0x01])?;
-        write_bytes_at(&mut file, 589356, &[0x33, 0x33, 0x00, 0x00])?;
+        write_bytes_at(&mut file, position + 6, &[0x33, 0x33, 0x00, 0x00])?;
     } else {
         eprintln!("Did not find the string to modify.");
     }
