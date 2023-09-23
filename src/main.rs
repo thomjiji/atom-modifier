@@ -52,7 +52,6 @@ impl ColrAtom {
 
         while reader.read(&mut buffer)? != 0 {
             if buffer.as_slice() == pattern {
-                println!("current cursor position: {:?}", reader.stream_position());
                 let mut atom = Self::new();
                 atom.offset += offset;
                 reader.seek(SeekFrom::Current(-8))?;
