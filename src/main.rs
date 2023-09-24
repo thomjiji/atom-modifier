@@ -55,21 +55,39 @@ impl ColrAtom {
             if buffer.as_slice() == pattern {
                 let mut atom = Self::new();
 
-                atom.offset += offset; // set offset
+                atom.offset += offset; // Set offset
 
-                reader.seek(SeekFrom::Current(-8))?; // The size of colr atom is 8 bytes before the colr's type.
+                // The size of colr atom is located 8 bytes before the colr atom's position/offset
+                reader.seek(SeekFrom::Current(-8))?;
                 let mut size_buf = [0; 4];
                 reader.read_exact(&mut size_buf)?;
-                atom.size += u32::from_be_bytes(size_buf); // set size
+                atom.size = u32::from_be_bytes(size_buf); // Set size
 
-                reader.seek(SeekFrom::Start(offset))?;
+                // The value of primaries, transfer function and matrix are located 8 bytes after
+                // colr atom's position/offset
+                reader.seek(SeekFrom::Start(offset + 8))?;
+
+                // Read primaries
+                let mut primaries_buf = [0; 2];
+                reader.read_exact(&mut primaries_buf)?;
+                atom.primaries = u16::from_be_bytes(primaries_buf);
+
+                // Read transfer function
+                let mut transfer_function_buf = [0; 2];
+                reader.read_exact(&mut transfer_function_buf)?;
+                atom.transfer_function = u16::from_be_bytes(transfer_function_buf);
+
+                // Read matrix
+                let mut matrix_buf = [0; 2];
+                reader.read_exact(&mut matrix_buf)?;
+                atom.matrix = u16::from_be_bytes(matrix_buf);
+
                 return Ok(atom);
             }
             offset += 1;
             reader.seek(SeekFrom::Start(offset))?;
         }
 
-        // println!("Pattern {:?} was not found in the file.", pattern);
         Err(Error::new(
             io::ErrorKind::NotFound,
             "Atom pattern was not found in the file.",
@@ -88,9 +106,9 @@ fn write_bytes_at(f: &mut File, position: u64, bytes: &[u8]) -> io::Result<()> {
 }
 
 fn main() {
-    let mut stream =
-        File::open("/Users/thom/code/rust/atom_modifier/test_footages/1-2-1_modified.mov")
-            .expect("Failed to open the file");
+    let args = Args::parse();
+
+    let mut stream = File::open(args.input_file_path).expect("Failed to open the file");
 
     match ColrAtom::search(&mut stream, &COLR_ATOM) {
         Ok(atom) => {
