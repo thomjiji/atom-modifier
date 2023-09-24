@@ -54,13 +54,13 @@ impl ColrAtom {
             .windows(pattern.len())
             .position(|window| window == pattern);
 
-        println!("Offset: {:?}", pattern_position);
-
         if let Some(offset) = pattern_position {
             let mut atom = Self::new();
 
+            // Set the offset to the position on the pattern match 4 bytes forward.
             atom.offset = (offset - 4) as u64;
 
+            // From there until the next 4 bytes are size.
             atom.size = u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
 
             atom.primaries =
