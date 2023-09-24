@@ -55,10 +55,17 @@ impl ColrAtom {
             if buffer.as_slice() == pattern {
                 let mut atom = Self::new();
 
-                atom.offset += offset; // Set offset
-
-                // The size of colr atom is located 8 bytes before the colr atom's position/offset
+                // When the pattern matches, move cursor backwards 8 bytes. Why 8 bytes?
+                //
+                // For example:
+                // 0011d2f0  61 73 70 00 00 00 01 00  00 00 01 00 00 00 12 63  |asp............c|
+                // 0011d300  6f 6c 72 6e 63 6c 63 00  01 00 01 00 01 00 00 00  |olrnclc.........|
+                //
+                // When the pattern matches, the current offset is located at 0x63, but the cursor
+                // is moved to 0x6e. So we need to move the cursor backwards 8 bytes to get to 0x00.
                 reader.seek(SeekFrom::Current(-8))?;
+                atom.offset = reader.stream_position()?;
+
                 let mut size_buf = [0; 4];
                 reader.read_exact(&mut size_buf)?;
                 atom.size = u32::from_be_bytes(size_buf); // Set size
