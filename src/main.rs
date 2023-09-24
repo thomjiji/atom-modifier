@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufReader, Error, Read, Seek, SeekFrom, Write};
+use std::io::{Error, Read, Seek, SeekFrom, Write};
 
 use clap::Parser;
 
@@ -47,52 +47,31 @@ impl ColrAtom {
         }
     }
     fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
-        let mut reader = BufReader::new(file);
-        let mut buffer = vec![0; pattern.len()];
-        let mut offset = 0;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
 
-        while reader.read(&mut buffer)? != 0 {
-            if buffer.as_slice() == pattern {
-                let mut atom = Self::new();
+        let pattern_position = buffer
+            .windows(pattern.len())
+            .position(|window| window == pattern);
 
-                // When the pattern matches, move cursor backwards 8 bytes. Why 8 bytes?
-                //
-                // For example:
-                // 0011d2f0  61 73 70 00 00 00 01 00  00 00 01 00 00 00 12 63  |asp............c|
-                // 0011d300  6f 6c 72 6e 63 6c 63 00  01 00 01 00 01 00 00 00  |olrnclc.........|
-                //
-                // When the pattern matches, the current offset is located at 0x63, but the cursor
-                // is moved to 0x6e. So we need to move the cursor backwards 8 bytes to get to 0x00.
-                reader.seek(SeekFrom::Current(-8))?;
-                atom.offset = reader.stream_position()?;
+        println!("Offset: {:?}", pattern_position);
 
-                let mut size_buf = [0; 4];
-                reader.read_exact(&mut size_buf)?;
-                atom.size = u32::from_be_bytes(size_buf); // Set size
+        if let Some(offset) = pattern_position {
+            let mut atom = Self::new();
 
-                // The value of primaries, transfer function and matrix are located 8 bytes after
-                // colr atom's position/offset
-                reader.seek(SeekFrom::Start(offset + 8))?;
+            atom.offset = (offset - 4) as u64;
 
-                // Read primaries
-                let mut primaries_buf = [0; 2];
-                reader.read_exact(&mut primaries_buf)?;
-                atom.primaries = u16::from_be_bytes(primaries_buf);
+            atom.size = u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
 
-                // Read transfer function
-                let mut transfer_function_buf = [0; 2];
-                reader.read_exact(&mut transfer_function_buf)?;
-                atom.transfer_function = u16::from_be_bytes(transfer_function_buf);
+            atom.primaries =
+                u16::from_be_bytes(buffer[offset + 8..offset + 10].try_into().unwrap());
 
-                // Read matrix
-                let mut matrix_buf = [0; 2];
-                reader.read_exact(&mut matrix_buf)?;
-                atom.matrix = u16::from_be_bytes(matrix_buf);
+            atom.transfer_function =
+                u16::from_be_bytes(buffer[offset + 10..offset + 12].try_into().unwrap());
 
-                return Ok(atom);
-            }
-            offset += 1;
-            reader.seek(SeekFrom::Start(offset))?;
+            atom.matrix = u16::from_be_bytes(buffer[offset + 12..offset + 14].try_into().unwrap());
+
+            return Ok(atom);
         }
 
         Err(Error::new(
@@ -115,7 +94,13 @@ fn write_bytes_at(f: &mut File, position: u64, bytes: &[u8]) -> io::Result<()> {
 fn main() {
     let args = Args::parse();
 
-    let mut stream = File::open(args.input_file_path).expect("Failed to open the file");
+    let mut stream = match File::open(args.input_file_path) {
+        Ok(file) => {
+            println!("File opened");
+            file
+        }
+        Err(e) => panic!("An error occurred when open file: {}", e),
+    };
 
     match ColrAtom::search(&mut stream, &COLR_ATOM) {
         Ok(atom) => {
