@@ -47,31 +47,58 @@ impl ColrAtom {
         }
     }
     fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
+        let mut buffer = vec![0; 1024 * 1024];
+        let mut file_content: Vec<u8> = Vec::new();
+        let mut offset = 0;
 
-        let pattern_position = buffer
-            .windows(pattern.len())
-            .position(|window| window == pattern);
+        loop {
+            let bytes_read = file.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            file_content.extend_from_slice(&buffer[..bytes_read]);
 
-        if let Some(offset) = pattern_position {
-            let mut atom = Self::new();
+            if let Some(index) = file_content
+                .windows(pattern.len())
+                .position(|window| window == pattern)
+            {
+                let mut atom = Self::new();
 
-            // Set the offset to the position on the pattern match 4 bytes forward.
-            atom.offset = (offset - 4) as u64;
+                let atom_offset = offset + (index as u64);
 
-            // From there until the next 4 bytes are size.
-            atom.size = u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
+                atom.offset = atom_offset - 4;
 
-            atom.primaries =
-                u16::from_be_bytes(buffer[offset + 8..offset + 10].try_into().unwrap());
+                atom.size = u32::from_be_bytes(
+                    file_content[(atom_offset - 4) as usize..atom_offset as usize]
+                        .try_into()
+                        .unwrap(),
+                );
 
-            atom.transfer_function =
-                u16::from_be_bytes(buffer[offset + 10..offset + 12].try_into().unwrap());
+                atom.primaries = u16::from_be_bytes(
+                    file_content[(atom_offset + 8) as usize..(atom_offset + 10) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
 
-            atom.matrix = u16::from_be_bytes(buffer[offset + 12..offset + 14].try_into().unwrap());
+                atom.transfer_function = u16::from_be_bytes(
+                    file_content[(atom_offset + 10) as usize..(atom_offset + 12) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
 
-            return Ok(atom);
+                atom.matrix = u16::from_be_bytes(
+                    file_content[(atom_offset + 12) as usize..(atom_offset + 14) as usize]
+                        .try_into()
+                        .unwrap(),
+                );
+
+                return Ok(atom);
+            }
+
+            let align = file_content.len() % pattern.len();
+            file_content.drain(..file_content.len() - align);
+
+            offset += bytes_read as u64;
         }
 
         Err(Error::new(
