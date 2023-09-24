@@ -1,5 +1,5 @@
-use std::fmt::Formatter;
 use std::fs::File;
+use std::io;
 use std::io::{BufReader, Error, Read, Seek, SeekFrom, Write};
 
 use clap::Parser;
@@ -26,29 +26,6 @@ enum ColorParameterType {
 }
 
 #[derive(Debug)]
-pub enum SearchError {
-    Io(Error),
-    NotFound(Vec<u8>),
-}
-
-impl From<Error> for SearchError {
-    fn from(err: Error) -> Self {
-        SearchError::Io(err)
-    }
-}
-
-impl std::fmt::Display for SearchError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SearchError::Io(err) => write!(f, "IO error: {}", err),
-            SearchError::NotFound(pattern) => {
-                write!(f, "Pattern {:?} was not found in the file.", pattern)
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
 struct ColrAtom {
     size: u32,
     color_parameter_type: ColorParameterType,
@@ -69,7 +46,7 @@ impl ColrAtom {
             matrix: 0,
         }
     }
-    fn search(file: &mut File, pattern: &[u8]) -> Result<Option<Self>, SearchError> {
+    fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
         let mut reader = BufReader::new(file);
         let mut buffer = vec![0; pattern.len()];
         let mut offset = 0;
@@ -86,14 +63,17 @@ impl ColrAtom {
                 atom.size += u32::from_be_bytes(size_buf); // set size
 
                 reader.seek(SeekFrom::Start(offset))?;
-                return Ok(Some(atom));
+                return Ok(atom);
             }
             offset += 1;
             reader.seek(SeekFrom::Start(offset))?;
         }
 
         // println!("Pattern {:?} was not found in the file.", pattern);
-        Err(SearchError::NotFound(pattern.to_vec()))
+        Err(Error::new(
+            io::ErrorKind::NotFound,
+            "Atom pattern was not found in the file.",
+        ))
     }
 }
 
@@ -102,7 +82,7 @@ struct GamaAtom {
     data: u32,
 }
 
-fn write_bytes_at(f: &mut std::fs::File, position: u64, bytes: &[u8]) -> std::io::Result<()> {
+fn write_bytes_at(f: &mut File, position: u64, bytes: &[u8]) -> io::Result<()> {
     f.seek(SeekFrom::Start(position))?;
     f.write_all(bytes)
 }
@@ -113,11 +93,8 @@ fn main() {
             .expect("Failed to open the file");
 
     match ColrAtom::search(&mut stream, &COLR_ATOM) {
-        Ok(Some(atom)) => {
+        Ok(atom) => {
             println!("Found atom: {:?}", atom);
-        }
-        Ok(None) => {
-            println!("No atom found!");
         }
         Err(e) => {
             println!("An error occurred: {}", e);
