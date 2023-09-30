@@ -1,17 +1,24 @@
-use std::fs::File;
-use std::io;
-use std::io::{Error, Read, Seek, SeekFrom, Write};
-use std::time::Instant;
-
 use clap::Parser;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Seek, Write};
+use std::io::{Error, Read};
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
     input_file_path: String,
+
     #[arg(short, long)]
-    colr: String,
+    primaries_index: String,
+
+    #[arg(short, long)]
+    transfer_function_index: String,
+
+    #[arg(short, long)]
+    matrix_index: String,
+
     #[arg(short, long, default_value_t = String::from("0"))]
     gama: String,
 }
@@ -81,22 +88,48 @@ impl ColrAtom {
             "Atom pattern was not found in the file.",
         ))
     }
+
+    fn overwrite(
+        file: &mut File,
+        colr_atom: ColrAtom,
+        target_colr_tags: &[u8; 3],
+    ) -> Result<(), Error> {
+        let primary = target_colr_tags[0];
+        let transfer_function = target_colr_tags[1];
+        let matrix = target_colr_tags[2];
+
+        let buf = &[0, primary, 0, transfer_function, 0, matrix];
+        file.seek(io::SeekFrom::Start(colr_atom.offset + 12))?;
+        file.write_all(buf)?;
+
+        file.sync_all().expect("file sync all has some problem");
+
+        Ok(())
+    }
 }
 
-struct GamaAtom {
-    size: u8,
-    data: u32,
+struct ProResFrame {
+    frame_size: u32,
+    frame_id: f32,
+    frame_header: ProResFrameHeader,
 }
 
-fn write_bytes_at(f: &mut File, position: u64, bytes: &[u8]) -> io::Result<()> {
-    f.seek(SeekFrom::Start(position))?;
-    f.write_all(bytes)
+struct ProResFrameHeader {
+    frame_header_size: u16,
+    color_primaries: u8,
+    transfer_characteristic: u8,
+    matrix_coefficients: u8,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let mut stream = match File::open(args.input_file_path) {
+    // Open file stream
+    let mut stream = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(args.input_file_path)
+    {
         Ok(file) => {
             println!("File opened...");
             file
@@ -104,13 +137,16 @@ fn main() {
         Err(e) => panic!("An error occurred when open file: {}", e),
     };
 
+    // Fetch colr atom information from file stream.
     let start = Instant::now();
-    match ColrAtom::search(&mut stream, &COLR_ATOM) {
+    let colr_atom_found = match ColrAtom::search(&mut stream, &COLR_ATOM) {
         Ok(atom) => {
             println!("Found atom: \n\t{:?}", atom);
+            Some(atom)
         }
         Err(e) => {
             println!("An error occurred: {}", e);
+            None
         }
     };
     let duration = start.elapsed();
@@ -118,4 +154,34 @@ fn main() {
         "Time elapsed in this search implementation is: {:?}",
         duration
     );
+
+    // Overwrite colr atom
+    let primaries = match args.primaries_index.parse::<u8>() {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
+            return;
+        }
+    };
+    let transfer_function = match args.transfer_function_index.parse::<u8>() {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
+            return;
+        }
+    };
+    let matrix = match args.matrix_index.parse::<u8>() {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
+            return;
+        }
+    };
+
+    let colr_modified: [u8; 3] = [primaries, transfer_function, matrix];
+
+    let colr_atom_found = colr_atom_found.unwrap();
+
+    ColrAtom::overwrite(&mut stream, colr_atom_found, &colr_modified)
+        .expect("Something bad happened when overwrite colr atom.");
 }
