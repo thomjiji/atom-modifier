@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::{Error, Read, Seek, SeekFrom, Write};
+use std::time::Instant;
 
 use clap::Parser;
 
@@ -46,6 +47,7 @@ impl ColrAtom {
             matrix: 0,
         }
     }
+
     fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -81,6 +83,51 @@ impl ColrAtom {
     }
 }
 
+pub struct Searcher {
+    pattern: Vec<u8>,
+    matched: bool,
+    search_position: usize,
+}
+
+impl Searcher {
+    pub fn new(pattern: Vec<u8>) -> Self {
+        Self {
+            pattern,
+            matched: false,
+            search_position: 0,
+        }
+    }
+
+    pub fn next_byte(&mut self, b: u8) {
+        self.matched = false;
+        if b == self.pattern[0] {
+            self.search_position = 0;
+        }
+        if b == self.pattern[self.search_position] {
+            self.search_position += 1;
+            if self.search_position == self.pattern.len() {
+                self.matched = true;
+                self.search_position = 0;
+            }
+        } else {
+            self.search_position = 0;
+        }
+    }
+
+    // getters and setters
+    pub fn matched(&self) -> bool {
+        self.matched
+    }
+
+    pub fn pattern(&self) -> &[u8] {
+        &self.pattern
+    }
+
+    pub fn set_pattern(&mut self, pattern: &[u8]) {
+        self.pattern = Vec::from(pattern);
+    }
+}
+
 struct GamaAtom {
     size: u8,
     data: u32,
@@ -96,18 +143,42 @@ fn main() {
 
     let mut stream = match File::open(args.input_file_path) {
         Ok(file) => {
-            println!("File opened");
+            println!("File opened...");
             file
         }
         Err(e) => panic!("An error occurred when open file: {}", e),
     };
 
-    match ColrAtom::search(&mut stream, &COLR_ATOM) {
-        Ok(atom) => {
-            println!("Found atom: {:?}", atom);
+    // let start = Instant::now();
+    // match ColrAtom::search(&mut stream, &COLR_ATOM) {
+    //     Ok(atom) => {
+    //         println!("Found atom: \n\t{:?}", atom);
+    //     }
+    //     Err(e) => {
+    //         println!("An error occurred: {}", e);
+    //     }
+    // };
+    // let duration = start.elapsed();
+    // println!(
+    //     "Time elapsed in this search implementation is: {:?}",
+    //     duration
+    // );
+
+    let mut colr_atom_search = Searcher::new(Vec::from(COLR_ATOM));
+
+    let start = Instant::now();
+    loop {
+        let mut buf: [u8; 1] = [0; 1];
+        stream.read_exact(&mut buf).unwrap();
+        colr_atom_search.next_byte(buf[0]);
+
+        if colr_atom_search.matched {
+            let offset = stream.stream_position().unwrap() - 4;
+            println!("Matched!");
+            println!("\t- offset: {}", offset);
+            break;
         }
-        Err(e) => {
-            println!("An error occurred: {}", e);
-        }
-    };
+    }
+    let duration = start.elapsed();
+    println!("Time elapsed in this loop is: {:?}", duration);
 }
