@@ -11,26 +11,38 @@ struct Args {
     input_file_path: String,
 
     #[arg(short, long)]
-    primaries_index: String,
+    show_property: Option<String>,
 
     #[arg(short, long)]
-    transfer_function_index: String,
+    primaries: String,
 
     #[arg(short, long)]
-    matrix_index: String,
+    transfer_function: String,
+
+    #[arg(short, long)]
+    matrix: String,
 
     #[arg(short, long, default_value_t = String::from("0"))]
     gama: String,
 }
 
-static COLR_ATOM: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
-static GAMA_ATOM: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
+static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
+static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
+static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 66]; // "icpf"
 
 #[derive(Debug)]
 enum ColorParameterType {
     Nclc, // for video
     Prof, // for print
     Unknown,
+}
+
+trait AtomTrait {
+    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
+        buffer
+            .windows(pattern.len())
+            .position(|window| window == pattern)
+    }
 }
 
 #[derive(Debug)]
@@ -59,9 +71,7 @@ impl ColrAtom {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        let pattern_position = buffer
-            .windows(pattern.len())
-            .position(|window| window == pattern);
+        let pattern_position = Self::find_pattern_position(&buffer, pattern);
 
         if let Some(offset) = pattern_position {
             let mut atom = Self::new();
@@ -89,17 +99,13 @@ impl ColrAtom {
         ))
     }
 
-    fn overwrite(
-        file: &mut File,
-        colr_atom: ColrAtom,
-        target_colr_tags: &[u8; 3],
-    ) -> Result<(), Error> {
+    fn overwrite(self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
         let primary = target_colr_tags[0];
         let transfer_function = target_colr_tags[1];
         let matrix = target_colr_tags[2];
 
         let buf = &[0, primary, 0, transfer_function, 0, matrix];
-        file.seek(io::SeekFrom::Start(colr_atom.offset + 12))?;
+        file.seek(io::SeekFrom::Start(self.offset + 12))?;
         file.write_all(buf)?;
 
         file.sync_all().expect("file sync all has some problem");
@@ -108,13 +114,29 @@ impl ColrAtom {
     }
 }
 
+impl AtomTrait for ColrAtom {}
+
+struct GamaAtom {
+    size: u8,
+    data: u32,
+    offset: u64,
+}
+
+impl AtomTrait for GamaAtom {
+    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
+        todo!()
+    }
+}
+
 struct ProResFrame {
+    offset: u64,
     frame_size: u32,
     frame_id: f32,
     frame_header: ProResFrameHeader,
 }
 
 struct ProResFrameHeader {
+    offset: u64,
     frame_header_size: u16,
     color_primaries: u8,
     transfer_characteristic: u8,
@@ -139,7 +161,7 @@ fn main() {
 
     // Fetch colr atom information from file stream.
     let start = Instant::now();
-    let colr_atom_found = match ColrAtom::search(&mut stream, &COLR_ATOM) {
+    let colr_atom_found = match ColrAtom::search(&mut stream, &COLR_ATOM_HEADER) {
         Ok(atom) => {
             println!("Found atom: \n\t{:?}", atom);
             Some(atom)
@@ -156,21 +178,21 @@ fn main() {
     );
 
     // Overwrite colr atom
-    let primaries = match args.primaries_index.parse::<u8>() {
+    let primaries = match args.primaries.parse::<u8>() {
         Ok(value) => value,
         Err(_) => {
             eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
             return;
         }
     };
-    let transfer_function = match args.transfer_function_index.parse::<u8>() {
+    let transfer_function = match args.transfer_function.parse::<u8>() {
         Ok(value) => value,
         Err(_) => {
             eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
             return;
         }
     };
-    let matrix = match args.matrix_index.parse::<u8>() {
+    let matrix = match args.matrix.parse::<u8>() {
         Ok(value) => value,
         Err(_) => {
             eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
@@ -178,10 +200,11 @@ fn main() {
         }
     };
 
-    let colr_modified: [u8; 3] = [primaries, transfer_function, matrix];
+    let colr_target: [u8; 3] = [primaries, transfer_function, matrix];
 
     let colr_atom_found = colr_atom_found.unwrap();
 
-    ColrAtom::overwrite(&mut stream, colr_atom_found, &colr_modified)
+    colr_atom_found
+        .overwrite(&mut stream, &colr_target)
         .expect("Something bad happened when overwrite colr atom.");
 }
