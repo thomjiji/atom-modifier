@@ -28,21 +28,119 @@ struct Args {
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
 static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
-static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 66]; // "icpf"
+static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
+
+struct Video {
+    colr_atom: ColrAtom,
+    gama_atom: GamaAtom,
+    frames: Vec<ProResFrame>,
+    frame_count: i64,
+}
+
+impl Video {
+    pub fn new() -> Self {
+        Self {
+            colr_atom: ColrAtom::new(),
+            gama_atom: GamaAtom::new(),
+            frames: Vec::new(),
+            frame_count: 0,
+        }
+    }
+
+    fn read_file(
+        &self,
+        file_path: &str,
+        read: Option<bool>,
+        write: Option<bool>,
+    ) -> Result<File, Error> {
+        let read_permission = read.unwrap_or(true);
+        let write_permission = write.unwrap_or(false);
+
+        let file = OpenOptions::new()
+            .read(read_permission)
+            .write(write_permission)
+            .open(file_path)?;
+
+        Ok(file)
+    }
+
+    fn decode(&mut self, file: &mut File) -> Result<Self, Error> {
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+
+        self.colr_atom.find_pattern_position(buffer.as_slice());
+
+        // Hanlding colr atom
+        if self.colr_atom.matched {
+            self.colr_atom.size = u32::from_be_bytes(
+                buffer[self.colr_atom.offset as usize..(self.colr_atom.offset + 4) as usize]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            self.colr_atom.primaries = u16::from_be_bytes(
+                buffer
+                    [(self.colr_atom.offset + 12) as usize..(self.colr_atom.offset + 14) as usize]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            self.colr_atom.transfer_function = u16::from_be_bytes(
+                buffer
+                    [(self.colr_atom.offset + 14) as usize..(self.colr_atom.offset + 16) as usize]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            self.colr_atom.matrix = u16::from_be_bytes(
+                buffer
+                    [(self.colr_atom.offset + 16) as usize..(self.colr_atom.offset + 18) as usize]
+                    .try_into()
+                    .unwrap(),
+            );
+        }
+
+        // Handling each frame
+        loop {
+            let mut frame = ProResFrame::new();
+            match frame.search(buffer.as_slice()) {
+                Some(_) => {
+                    self.frames.push(frame);
+                    self.frame_count += 1;
+                }
+                None => break,
+            };
+
+            let frame_size = self.frames.last().unwrap().frame_size;
+            buffer = buffer.split_off(frame_size as usize);
+        }
+
+        // if self.gama_atom.matched {
+        //     self.gama_atom.size = u32::from_be_bytes(
+        //         buffer[self.gama_atom.offset as usize..(self.gama_atom.offset + 4) as usize]
+        //             .try_into()
+        //             .unwrap(),
+        //     );
+        //
+        //     self.gama_atom.gama_value = u32::from_be_bytes(
+        //         buffer[(self.gama_atom.offset + 8) as usize..(self.gama_atom.offset + 12) as usize]
+        //             .try_into()
+        //             .unwrap(),
+        //     );
+        // }
+
+        Err(Error::new(
+            io::ErrorKind::NotFound,
+            "Atom pattern was not found in the file.",
+        ))
+    }
+}
 
 #[derive(Debug)]
 enum ColorParameterType {
     Nclc, // for video
     Prof, // for print
     Unknown,
-}
-
-trait AtomTrait {
-    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
-        buffer
-            .windows(pattern.len())
-            .position(|window| window == pattern)
-    }
 }
 
 #[derive(Debug)]
@@ -53,6 +151,7 @@ struct ColrAtom {
     primaries: u16,
     transfer_function: u16,
     matrix: u16,
+    matched: bool,
 }
 
 impl ColrAtom {
@@ -64,14 +163,15 @@ impl ColrAtom {
             primaries: 0,
             transfer_function: 0,
             matrix: 0,
+            matched: false,
         }
     }
 
-    fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
+    fn search(&mut self, file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        let pattern_position = Self::find_pattern_position(&buffer, pattern);
+        let pattern_position = self.find_pattern_position(&buffer);
 
         if let Some(offset) = pattern_position {
             let mut atom = Self::new();
@@ -99,7 +199,7 @@ impl ColrAtom {
         ))
     }
 
-    fn overwrite(self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
+    fn overwrite(&self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
         let primary = target_colr_tags[0];
         let transfer_function = target_colr_tags[1];
         let matrix = target_colr_tags[2];
@@ -112,19 +212,74 @@ impl ColrAtom {
 
         Ok(())
     }
-}
 
-impl AtomTrait for ColrAtom {}
+    fn find_pattern_position(&mut self, buffer: &[u8]) -> Option<usize> {
+        match buffer
+            .windows(COLR_ATOM_HEADER.len())
+            .position(|window| window == COLR_ATOM_HEADER)
+        {
+            Some(offset) => {
+                // Set the offset to the position on the pattern match 4 bytes forward.
+                self.offset = (offset - 4) as u64;
+                self.matched = true;
+                Some(offset - 4)
+            }
+            None => {
+                println!("colr atom header was not found in the buffer (file stream).");
+                None
+            }
+        }
+    }
+}
 
 struct GamaAtom {
-    size: u8,
-    data: u32,
-    offset: u64,
+    size: u32,
+    gama_value: u32,
+    offsets: Vec<u64>,
+    the_actual_gama_offset: u64,
+    matched: bool,
 }
 
-impl AtomTrait for GamaAtom {
-    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
-        todo!()
+impl GamaAtom {
+    fn new() -> GamaAtom {
+        Self {
+            size: 0,
+            gama_value: 0,
+            offsets: Vec::new(),
+            the_actual_gama_offset: 0,
+            matched: false,
+        }
+    }
+
+    fn find_pattern_position(&mut self, buffer: &[u8], colr_atom_transfer_function: u16) {
+        for (i, window) in buffer.windows(GAMA_ATOM_HEADER.len()).enumerate() {
+            if window == GAMA_ATOM_HEADER {
+                let offset = (i - 4) as u64;
+                self.offsets.push(offset);
+                self.matched = true;
+            }
+        }
+
+        match self.offsets.len() {
+            0 => {
+                println!("gama atom header was not found in the buffer (file stream).");
+            }
+            1 => {
+                if colr_atom_transfer_function == 1 {
+                    eprintln!("There is not supposed to have gama atom pattern.")
+                } else {
+                    self.the_actual_gama_offset = self.offsets[1];
+                }
+            }
+            2 => {
+                if let Some(last) = self.offsets.last() {
+                    self.the_actual_gama_offset += last;
+                }
+            }
+            _ => {
+                eprintln!("There are more than 2 matches for gama atom header, strange! Please investigate.");
+            }
+        }
     }
 }
 
@@ -132,79 +287,132 @@ struct ProResFrame {
     offset: u64,
     frame_size: u32,
     frame_id: f32,
-    frame_header: ProResFrameHeader,
-}
-
-struct ProResFrameHeader {
-    offset: u64,
     frame_header_size: u16,
     color_primaries: u8,
     transfer_characteristic: u8,
     matrix_coefficients: u8,
 }
 
+impl ProResFrame {
+    fn new() -> Self {
+        Self {
+            offset: 0,
+            frame_size: 0,
+            frame_id: 0.0,
+            frame_header_size: 0,
+            color_primaries: 0,
+            transfer_characteristic: 0,
+            matrix_coefficients: 0,
+        }
+    }
+
+    fn search(&mut self, buffer: &[u8]) -> Option<u64> {
+        match buffer
+            .windows(FRAME_HEADER.len())
+            .position(|window| window == FRAME_HEADER)
+        {
+            Some(offset) => {
+                self.offset = (offset - 4) as u64;
+                self.frame_size =
+                    u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
+                self.frame_header_size =
+                    u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
+
+                self.color_primaries =
+                    u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
+
+                self.transfer_characteristic =
+                    u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
+
+                self.matrix_coefficients =
+                    u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
+
+                Some(self.offset)
+            }
+            None => {
+                println!("frame header was not found in the buffer (file stream).");
+                None
+            }
+        }
+    }
+}
+
 fn main() {
+    // let args = Args::parse();
+
+    // // Open file stream
+    // let mut stream = match OpenOptions::new()
+    //     .read(true)
+    //     .write(true)
+    //     .open(args.input_file_path)
+    // {
+    //     Ok(file) => {
+    //         println!("File opened...");
+    //         file
+    //     }
+    //     Err(e) => panic!("An error occurred when open file: {}", e),
+    // };
+
+    // // Fetch colr atom information from file stream.
+    // let start = Instant::now();
+    // let mut colr_atom = ColrAtom::new();
+    // let colr_atom_found = match colr_atom.search(&mut stream, &COLR_ATOM_HEADER) {
+    //     Ok(atom) => {
+    //         println!("Found atom: \n\t{:?}", atom);
+    //         Some(atom)
+    //     }
+    //     Err(e) => {
+    //         println!("An error occurred: {}", e);
+    //         None
+    //     }
+    // };
+    // let duration = start.elapsed();
+    // println!(
+    //     "Time elapsed in this search implementation is: {:?}",
+    //     duration
+    // );
+
+    // // Overwrite colr atom
+    // let primaries = match args.primaries.parse::<u8>() {
+    //     Ok(value) => value,
+    //     Err(_) => {
+    //         eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
+    //         return;
+    //     }
+    // };
+    // let transfer_function = match args.transfer_function.parse::<u8>() {
+    //     Ok(value) => value,
+    //     Err(_) => {
+    //         eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
+    //         return;
+    //     }
+    // };
+    // let matrix = match args.matrix.parse::<u8>() {
+    //     Ok(value) => value,
+    //     Err(_) => {
+    //         eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
+    //         return;
+    //     }
+    // };
+
+    // let colr_target: [u8; 3] = [primaries, transfer_function, matrix];
+
+    // let colr_atom_found = colr_atom_found.unwrap();
+
+    // colr_atom_found
+    //     .overwrite(&mut stream, &colr_target)
+    //     .expect("Something bad happened when overwrite colr atom.");
+
     let args = Args::parse();
 
-    // Open file stream
-    let mut stream = match OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(args.input_file_path)
-    {
-        Ok(file) => {
-            println!("File opened...");
-            file
-        }
-        Err(e) => panic!("An error occurred when open file: {}", e),
-    };
+    let mut video = Video::new();
 
-    // Fetch colr atom information from file stream.
-    let start = Instant::now();
-    let colr_atom_found = match ColrAtom::search(&mut stream, &COLR_ATOM_HEADER) {
-        Ok(atom) => {
-            println!("Found atom: \n\t{:?}", atom);
-            Some(atom)
-        }
+    let mut file = match video.read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
+        Ok(file) => file,
         Err(e) => {
-            println!("An error occurred: {}", e);
-            None
-        }
-    };
-    let duration = start.elapsed();
-    println!(
-        "Time elapsed in this search implementation is: {:?}",
-        duration
-    );
-
-    // Overwrite colr atom
-    let primaries = match args.primaries.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
+            eprintln!("Error reading file: {}", e);
             return;
         }
     };
-    let transfer_function = match args.transfer_function.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
-            return;
-        }
-    };
-    let matrix = match args.matrix.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
-            return;
-        }
-    };
-
-    let colr_target: [u8; 3] = [primaries, transfer_function, matrix];
-
-    let colr_atom_found = colr_atom_found.unwrap();
-
-    colr_atom_found
-        .overwrite(&mut stream, &colr_target)
-        .expect("Something bad happened when overwrite colr atom.");
+    let video = video.decode(&mut file);
 }
