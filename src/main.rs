@@ -327,102 +327,13 @@ impl ProResFrame {
     }
 
     fn search(&mut self, buffer: &[u8]) -> Option<usize> {
-        match buffer
+        buffer
             .windows(FRAME_HEADER.len())
             .position(|window| window == FRAME_HEADER)
-        {
-            Some(offset) => {
-                // self.offset = (offset - 4) as u64;
-                // self.frame_size =
-                //     u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
-                // self.frame_header_size =
-                //     u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
-
-                // self.color_primaries =
-                //     u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
-
-                // self.transfer_characteristic =
-                //     u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
-
-                // self.matrix_coefficients =
-                //     u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
-
-                Some(offset)
-            }
-            None => {
-                println!("frame header was not found in the buffer (file stream).");
-                None
-            }
-        }
     }
 }
 
 fn main() {
-    // let args = Args::parse();
-
-    // // Open file stream
-    // let mut stream = match OpenOptions::new()
-    //     .read(true)
-    //     .write(true)
-    //     .open(args.input_file_path)
-    // {
-    //     Ok(file) => {
-    //         println!("File opened...");
-    //         file
-    //     }
-    //     Err(e) => panic!("An error occurred when open file: {}", e),
-    // };
-
-    // // Fetch colr atom information from file stream.
-    // let start = Instant::now();
-    // let mut colr_atom = ColrAtom::new();
-    // let colr_atom_found = match colr_atom.search(&mut stream, &COLR_ATOM_HEADER) {
-    //     Ok(atom) => {
-    //         println!("Found atom: \n\t{:?}", atom);
-    //         Some(atom)
-    //     }
-    //     Err(e) => {
-    //         println!("An error occurred: {}", e);
-    //         None
-    //     }
-    // };
-    // let duration = start.elapsed();
-    // println!(
-    //     "Time elapsed in this search implementation is: {:?}",
-    //     duration
-    // );
-
-    // // Overwrite colr atom
-    // let primaries = match args.primaries.parse::<u8>() {
-    //     Ok(value) => value,
-    //     Err(_) => {
-    //         eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
-    //         return;
-    //     }
-    // };
-    // let transfer_function = match args.transfer_function.parse::<u8>() {
-    //     Ok(value) => value,
-    //     Err(_) => {
-    //         eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
-    //         return;
-    //     }
-    // };
-    // let matrix = match args.matrix.parse::<u8>() {
-    //     Ok(value) => value,
-    //     Err(_) => {
-    //         eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
-    //         return;
-    //     }
-    // };
-
-    // let colr_target: [u8; 3] = [primaries, transfer_function, matrix];
-
-    // let colr_atom_found = colr_atom_found.unwrap();
-
-    // colr_atom_found
-    //     .overwrite(&mut stream, &colr_target)
-    //     .expect("Something bad happened when overwrite colr atom.");
-
     let args = Args::parse();
 
     let mut file = match Video::read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
