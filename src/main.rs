@@ -30,6 +30,7 @@ static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
 static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
 static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
 
+#[derive(Debug)]
 struct Video {
     colr_atom: ColrAtom,
     gama_atom: GamaAtom,
@@ -47,12 +48,7 @@ impl Video {
         }
     }
 
-    fn read_file(
-        &self,
-        file_path: &str,
-        read: Option<bool>,
-        write: Option<bool>,
-    ) -> Result<File, Error> {
+    fn read_file(file_path: &str, read: Option<bool>, write: Option<bool>) -> Result<File, Error> {
         let read_permission = read.unwrap_or(true);
         let write_permission = write.unwrap_or(false);
 
@@ -64,75 +60,86 @@ impl Video {
         Ok(file)
     }
 
-    fn decode(&mut self, file: &mut File) -> Result<Self, Error> {
+    fn decode(file: &mut File) -> Result<Self, Error> {
+        let mut video = Video::new();
+
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        self.colr_atom.find_pattern_position(buffer.as_slice());
+        video.colr_atom.find_pattern_position(buffer.as_slice());
 
-        // Hanlding colr atom
-        if self.colr_atom.matched {
-            self.colr_atom.size = u32::from_be_bytes(
-                buffer[self.colr_atom.offset as usize..(self.colr_atom.offset + 4) as usize]
+        // Handle colr atom
+        if video.colr_atom.matched {
+            video.colr_atom.size = u32::from_be_bytes(
+                buffer[video.colr_atom.offset as usize..(video.colr_atom.offset + 4) as usize]
                     .try_into()
                     .unwrap(),
             );
 
-            self.colr_atom.primaries = u16::from_be_bytes(
-                buffer
-                    [(self.colr_atom.offset + 12) as usize..(self.colr_atom.offset + 14) as usize]
+            video.colr_atom.primaries = u16::from_be_bytes(
+                buffer[(video.colr_atom.offset + 12) as usize
+                    ..(video.colr_atom.offset + 14) as usize]
                     .try_into()
                     .unwrap(),
             );
 
-            self.colr_atom.transfer_function = u16::from_be_bytes(
-                buffer
-                    [(self.colr_atom.offset + 14) as usize..(self.colr_atom.offset + 16) as usize]
+            video.colr_atom.transfer_function = u16::from_be_bytes(
+                buffer[(video.colr_atom.offset + 14) as usize
+                    ..(video.colr_atom.offset + 16) as usize]
                     .try_into()
                     .unwrap(),
             );
 
-            self.colr_atom.matrix = u16::from_be_bytes(
-                buffer
-                    [(self.colr_atom.offset + 16) as usize..(self.colr_atom.offset + 18) as usize]
+            video.colr_atom.matrix = u16::from_be_bytes(
+                buffer[(video.colr_atom.offset + 16) as usize
+                    ..(video.colr_atom.offset + 18) as usize]
                     .try_into()
                     .unwrap(),
             );
         }
 
-        // Handling each frame
+        // Handle each frame
         loop {
             let mut frame = ProResFrame::new();
             match frame.search(buffer.as_slice()) {
-                Some(_) => {
-                    self.frames.push(frame);
-                    self.frame_count += 1;
+                Some(offset) => {
+                    if video.frames.is_empty() {
+                        frame.offset = (offset - 4) as u64;
+                    } else {
+                        let last_frame = video
+                            .frames
+                            .last()
+                            .expect("Unexpectedly, no last frame was found.");
+                        // next pos/offset = previous pos/offset + previous frame size
+                        frame.offset = last_frame.offset + last_frame.frame_size as u64;
+                    }
+
+                    frame.frame_size =
+                        u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
+
+                    frame.frame_header_size =
+                        u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
+
+                    frame.color_primaries =
+                        u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
+
+                    frame.transfer_characteristic =
+                        u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
+
+                    frame.matrix_coefficients =
+                        u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
+
+                    video.frames.push(frame);
+                    video.frame_count += 1;
                 }
                 None => break,
             };
 
-            let frame_size = self.frames.last().unwrap().frame_size;
+            let frame_size = video.frames.last().unwrap().frame_size;
             buffer = buffer.split_off(frame_size as usize);
         }
 
-        // if self.gama_atom.matched {
-        //     self.gama_atom.size = u32::from_be_bytes(
-        //         buffer[self.gama_atom.offset as usize..(self.gama_atom.offset + 4) as usize]
-        //             .try_into()
-        //             .unwrap(),
-        //     );
-        //
-        //     self.gama_atom.gama_value = u32::from_be_bytes(
-        //         buffer[(self.gama_atom.offset + 8) as usize..(self.gama_atom.offset + 12) as usize]
-        //             .try_into()
-        //             .unwrap(),
-        //     );
-        // }
-
-        Err(Error::new(
-            io::ErrorKind::NotFound,
-            "Atom pattern was not found in the file.",
-        ))
+        Ok(video)
     }
 }
 
@@ -232,6 +239,7 @@ impl ColrAtom {
     }
 }
 
+#[derive(Debug)]
 struct GamaAtom {
     size: u32,
     gama_value: u32,
@@ -283,6 +291,7 @@ impl GamaAtom {
     }
 }
 
+#[derive(Debug)]
 struct ProResFrame {
     offset: u64,
     frame_size: u32,
@@ -306,28 +315,28 @@ impl ProResFrame {
         }
     }
 
-    fn search(&mut self, buffer: &[u8]) -> Option<u64> {
+    fn search(&mut self, buffer: &[u8]) -> Option<usize> {
         match buffer
             .windows(FRAME_HEADER.len())
             .position(|window| window == FRAME_HEADER)
         {
             Some(offset) => {
-                self.offset = (offset - 4) as u64;
-                self.frame_size =
-                    u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
-                self.frame_header_size =
-                    u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
+                // self.offset = (offset - 4) as u64;
+                // self.frame_size =
+                //     u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
+                // self.frame_header_size =
+                //     u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
 
-                self.color_primaries =
-                    u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
+                // self.color_primaries =
+                //     u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
 
-                self.transfer_characteristic =
-                    u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
+                // self.transfer_characteristic =
+                //     u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
 
-                self.matrix_coefficients =
-                    u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
+                // self.matrix_coefficients =
+                //     u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
 
-                Some(self.offset)
+                Some(offset)
             }
             None => {
                 println!("frame header was not found in the buffer (file stream).");
@@ -405,14 +414,13 @@ fn main() {
 
     let args = Args::parse();
 
-    let mut video = Video::new();
-
-    let mut file = match video.read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
+    let mut file = match Video::read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Error reading file: {}", e);
             return;
         }
     };
-    let video = video.decode(&mut file);
+    let video = Video::decode(&mut file);
+    println!("{:#?}", video);
 }
