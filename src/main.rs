@@ -28,7 +28,7 @@ struct Args {
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
 static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
-static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 66]; // "icpf"
+static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
 
 #[derive(Debug)]
 enum ColorParameterType {
