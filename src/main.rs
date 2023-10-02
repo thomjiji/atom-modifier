@@ -132,11 +132,22 @@ impl Video {
                     video.frames.push(frame);
                     video.frame_count += 1;
                 }
-                None => break,
+                None => {
+                    if video.frames.is_empty() {
+                        println!("No ProRes frame was found in the file.");
+                        break;
+                    } else if buffer.len() < video.frames.last().unwrap().frame_size as usize {
+                        println!("Reach the end of the file stream.");
+                        break;
+                    } else {
+                        // Temporary solution for non-icpf frame: set the frame_id to -1.0.
+                        frame.frame_id = -1.0;
+                    }
+                }
             };
 
-            let frame_size = video.frames.last().unwrap().frame_size;
-            buffer = buffer.split_off(frame_size as usize);
+            let previous_frame_size = video.frames.last().unwrap().frame_size;
+            buffer = buffer.split_off(previous_frame_size as usize);
         }
 
         Ok(video)
@@ -295,7 +306,7 @@ impl GamaAtom {
 struct ProResFrame {
     offset: u64,
     frame_size: u32,
-    frame_id: f32,
+    frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
     transfer_characteristic: u8,
