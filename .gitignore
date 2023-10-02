@@ -1,4 +1,7 @@
 /target
 .idea/
-test_footages/
 **/*.DS_Store
+
+known_issue.md
+output.txt
+.vscode/
