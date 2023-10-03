@@ -2,7 +2,6 @@ use clap::Parser;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, Write};
 use std::io::{Error, Read};
-use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -152,6 +151,40 @@ impl Video {
 
         Ok(video)
     }
+
+    fn encode(
+        file: &mut File,
+        video: Video,
+        target_color_primaries: u8,
+        target_transfer_functions: u8,
+        target_matrix: u8,
+    ) -> io::Result<()> {
+        // Overwrite mov colr atom
+        let buf = [
+            0,
+            target_color_primaries,
+            0,
+            target_transfer_functions,
+            0,
+            target_matrix,
+        ];
+        file.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
+        file.write_all(&buf)?;
+
+        file.sync_all().expect("file sync all has some problem");
+
+        for frame in video.frames.iter() {
+            let buf = [
+                target_color_primaries,
+                target_transfer_functions,
+                target_matrix,
+            ];
+            file.seek(io::SeekFrom::Start(frame.offset + 22))?;
+            file.write_all(&buf)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -183,38 +216,6 @@ impl ColrAtom {
             matrix: 0,
             matched: false,
         }
-    }
-
-    fn search(&mut self, file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-
-        let pattern_position = self.find_pattern_position(&buffer);
-
-        if let Some(offset) = pattern_position {
-            let mut atom = Self::new();
-
-            // Set the offset to the position on the pattern match 4 bytes forward.
-            atom.offset = (offset - 4) as u64;
-
-            // From there until the next 4 bytes are size.
-            atom.size = u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
-
-            atom.primaries =
-                u16::from_be_bytes(buffer[offset + 8..offset + 10].try_into().unwrap());
-
-            atom.transfer_function =
-                u16::from_be_bytes(buffer[offset + 10..offset + 12].try_into().unwrap());
-
-            atom.matrix = u16::from_be_bytes(buffer[offset + 12..offset + 14].try_into().unwrap());
-
-            return Ok(atom);
-        }
-
-        Err(Error::new(
-            io::ErrorKind::NotFound,
-            "Atom pattern was not found in the file.",
-        ))
     }
 
     fn overwrite(&self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
@@ -344,5 +345,12 @@ fn main() {
         }
     };
     let video = Video::decode(&mut file);
-    println!("{:#?}", video);
+    Video::encode(
+        &mut file,
+        video.unwrap(),
+        args.primaries.parse().unwrap(),
+        args.transfer_function.parse().unwrap(),
+        args.matrix.parse().unwrap(),
+    )
+    .expect("Encode has some problem.");
 }
