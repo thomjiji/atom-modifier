@@ -66,7 +66,7 @@ impl Video {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        video.colr_atom.find_pattern_position(buffer.as_slice());
+        video.colr_atom.search(buffer.as_slice());
 
         // Handle colr atom
         if video.colr_atom.matched {
@@ -123,7 +123,7 @@ impl Video {
                     frame.color_primaries =
                         u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
 
-                    frame.transfer_characteristic =
+                    frame.transfer_characteristics =
                         u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
 
                     frame.matrix_coefficients =
@@ -231,7 +231,7 @@ impl ColrAtom {
         Ok(())
     }
 
-    fn find_pattern_position(&mut self, buffer: &[u8]) -> Option<usize> {
+    fn search(&mut self, buffer: &[u8]) -> Option<usize> {
         match buffer
             .windows(COLR_ATOM_HEADER.len())
             .position(|window| window == COLR_ATOM_HEADER)
@@ -270,7 +270,7 @@ impl GamaAtom {
         }
     }
 
-    fn find_pattern_position(&mut self, buffer: &[u8], colr_atom_transfer_function: u16) {
+    fn search(&mut self, buffer: &[u8], colr_atom_transfer_function: u16) {
         for (i, window) in buffer.windows(GAMA_ATOM_HEADER.len()).enumerate() {
             if window == GAMA_ATOM_HEADER {
                 let offset = (i - 4) as u64;
@@ -309,7 +309,7 @@ struct ProResFrame {
     frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
-    transfer_characteristic: u8,
+    transfer_characteristics: u8,
     matrix_coefficients: u8,
 }
 
@@ -321,7 +321,7 @@ impl ProResFrame {
             frame_id: 0.0,
             frame_header_size: 0,
             color_primaries: 0,
-            transfer_characteristic: 0,
+            transfer_characteristics: 0,
             matrix_coefficients: 0,
         }
     }
