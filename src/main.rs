@@ -75,6 +75,7 @@ impl Video {
 
             match mat {
                 Ok(mat) => match mat.pattern().as_u32() {
+                    // Construct colr atom
                     0 => {
                         video.colr_atom.offset = (mat.start() - 4) as u64;
 
@@ -98,6 +99,7 @@ impl Video {
 
                         video.colr_atom.matched = true;
                     }
+                    // Construct gama atom
                     1 => {
                         let offset = (mat.start() - 4) as u64;
                         video.gama_atom.offsets.push(offset);
@@ -117,6 +119,7 @@ impl Video {
                             video.gama_atom.gama_value = u32::from_be_bytes(value_buf);
                         }
                     }
+                    // Construct each ProRes frame
                     2 => {
                         let mut frame = ProResFrame::new();
                         frame.offset = (mat.start() - 4) as u64;
@@ -152,6 +155,7 @@ impl Video {
                     }
                     _ => unreachable!(),
                 },
+                // An error is yielded if there was a problem reading from the reader given.
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
                     return Err(e);
@@ -183,6 +187,7 @@ impl Video {
 
         file.sync_all().expect("File.sync_all() has some problem.");
 
+        // Overwrite each ProRes frame
         for frame in video.frames.iter() {
             let buf = [
                 target_color_primaries,
@@ -232,8 +237,14 @@ impl ColrAtom {
 #[derive(Debug)]
 struct GamaAtom {
     size: u32,
+    // The actual gama value: for example 2.4, 2.2, etc (It looks like this in
+    // hexadecimal form: 0x00, 0x02, 0x66, 0x66).
     gama_value: u32,
+    // gama atom candidates
     offsets: Vec<u64>,
+    // What is the real gama offset? As long as the four bytes before the gama
+    // offset/position candicate are in a specific pattern, i.e. like this: 0x00, 0x00,
+    // 0x00, 0x0c (It indicates the size of the gama atom, 12).
     the_actual_gama_offset: u64,
     matched: bool,
 }
@@ -279,17 +290,25 @@ fn main() {
     let args = Args::parse();
 
     let now = Instant::now();
-    let video = Video::decode(args.input_file_path.as_str()).unwrap();
+    let video = Video::decode(args.input_file_path.as_str()).unwrap_or_else(|e| {
+        eprintln!(
+            "Error decoding (constructing colr, gama atom and each frames) video: {}",
+            e
+        );
+        std::process::exit(1);
+    });
     println!(
         "- Time elapsed after decoding the file: {:?}",
         now.elapsed()
     );
 
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(args.input_file_path.as_str())
-        .unwrap();
+    let mut file = match Video::read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Error reading input file: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let now = Instant::now();
     Video::encode(
