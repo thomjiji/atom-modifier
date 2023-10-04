@@ -62,7 +62,7 @@ impl Video {
     }
 
     fn decode(file_path: &str) -> Result<Self, Error> {
-        let mut file = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+        let file = Self::read_file(file_path, Some(true), Some(true)).unwrap();
 
         let mut video = Video::new();
 
@@ -163,7 +163,7 @@ impl Video {
 
     fn encode(
         file: &mut File,
-        video: Video,
+        video: &Video,
         target_color_primaries: u8,
         target_transfer_functions: u8,
         target_matrix: u8,
@@ -180,7 +180,7 @@ impl Video {
         file.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
         file.write_all(&buf)?;
 
-        file.sync_all().expect("file sync all has some problem");
+        file.sync_all().expect("File.sync_all() has some problem.");
 
         for frame in video.frames.iter() {
             let buf = [
@@ -226,38 +226,6 @@ impl ColrAtom {
             matched: false,
         }
     }
-
-    fn overwrite(&self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
-        let primary = target_colr_tags[0];
-        let transfer_function = target_colr_tags[1];
-        let matrix = target_colr_tags[2];
-
-        let buf = &[0, primary, 0, transfer_function, 0, matrix];
-        file.seek(io::SeekFrom::Start(self.offset + 12))?;
-        file.write_all(buf)?;
-
-        file.sync_all().expect("file sync all has some problem");
-
-        Ok(())
-    }
-
-    fn search(&mut self, buffer: &[u8]) -> Option<usize> {
-        match buffer
-            .windows(COLR_ATOM_HEADER.len())
-            .position(|window| window == COLR_ATOM_HEADER)
-        {
-            Some(offset) => {
-                // Set the offset to the position on the pattern match 4 bytes forward.
-                self.offset = (offset - 4) as u64;
-                self.matched = true;
-                Some(offset - 4)
-            }
-            None => {
-                println!("colr atom header was not found in the buffer (file stream).");
-                None
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -277,37 +245,6 @@ impl GamaAtom {
             offsets: Vec::new(),
             the_actual_gama_offset: 0,
             matched: false,
-        }
-    }
-
-    fn search(&mut self, buffer: &[u8], colr_atom_transfer_function: u16) {
-        for (i, window) in buffer.windows(GAMA_ATOM_HEADER.len()).enumerate() {
-            if window == GAMA_ATOM_HEADER {
-                let offset = (i - 4) as u64;
-                self.offsets.push(offset);
-                self.matched = true;
-            }
-        }
-
-        match self.offsets.len() {
-            0 => {
-                println!("gama atom header was not found in the buffer (file stream).");
-            }
-            1 => {
-                if colr_atom_transfer_function == 1 {
-                    eprintln!("There is not supposed to have gama atom pattern.")
-                } else {
-                    self.the_actual_gama_offset = self.offsets[1];
-                }
-            }
-            2 => {
-                if let Some(last) = self.offsets.last() {
-                    self.the_actual_gama_offset += last;
-                }
-            }
-            _ => {
-                eprintln!("There are more than 2 matches for gama atom header, strange! Please investigate.");
-            }
         }
     }
 }
@@ -335,14 +272,6 @@ impl ProResFrame {
             matrix_coefficients: 0,
         }
     }
-
-    fn build(&mut self, file: &mut File) -> io::Result<()> {
-        let mut buf: [u8; 4] = [0; 4];
-        file.seek(io::SeekFrom::Start(self.offset))?;
-        file.read_exact(&mut buf);
-        self.frame_size = u32::from_be_bytes(buf);
-        Ok(())
-    }
 }
 
 fn main() {
@@ -350,11 +279,30 @@ fn main() {
 
     let now = Instant::now();
     let video = Video::decode(args.input_file_path.as_str()).unwrap();
-    println!("- Time elapsed: {:?}", now.elapsed());
+    println!(
+        "- Time elapsed after decoding the file: {:?}",
+        now.elapsed()
+    );
 
     let mut file = OpenOptions::new()
+        .read(true)
         .write(true)
-        .open("output.txt").unwrap();
+        .open(args.input_file_path.as_str())
+        .unwrap();
 
+    let now = Instant::now();
+    Video::encode(
+        &mut file,
+        &video,
+        args.primaries.parse::<u8>().unwrap(),
+        args.transfer_function.parse::<u8>().unwrap(),
+        args.matrix.parse::<u8>().unwrap(),
+    ).expect("Encode has some problem.");
+    println!(
+        "- Time elapsed after encoding the file: {:?}",
+        now.elapsed()
+    );
+
+    let mut file = OpenOptions::new().write(true).open("output.txt").unwrap();
     writeln!(file, "{:#?}", video).unwrap();
 }
