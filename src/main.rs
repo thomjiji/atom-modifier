@@ -15,16 +15,16 @@ struct Args {
     show_property: Option<String>,
 
     #[arg(short, long)]
-    primaries: String,
+    primary_index: u8,
 
     #[arg(short, long)]
-    transfer_function: String,
+    transfer_function_index: u8,
 
     #[arg(short, long)]
-    matrix: String,
+    matrix_index: u8,
 
-    #[arg(short, long, default_value_t = String::from("0"))]
-    gama: String,
+    #[arg(short, long, default_value_t = 0)]
+    gama_value: u32,
 }
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
@@ -85,15 +85,15 @@ impl Video {
                         let mut nclc_buf = [0; 2];
                         file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.primaries = u16::from_be_bytes(nclc_buf);
+                        video.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
 
                         file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 14))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.transfer_function = u16::from_be_bytes(nclc_buf);
+                        video.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
 
                         file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 16))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.matrix = u16::from_be_bytes(nclc_buf);
+                        video.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
 
                         video.colr_atom.matched = true;
                     }
@@ -138,7 +138,7 @@ impl Video {
                         let mut transfer_characteristics_buf = [0; 1];
                         file_to_seek.seek(io::SeekFrom::Start(frame.offset + 23))?;
                         file_to_seek.read_exact(&mut transfer_characteristics_buf)?;
-                        frame.transfer_characteristics =
+                        frame.transfer_characteristic =
                             u8::from_be_bytes(transfer_characteristics_buf);
 
                         let mut matrix_coefficients_buf = [0; 1];
@@ -208,9 +208,9 @@ struct ColrAtom {
     size: u32,
     color_parameter_type: ColorParameterType,
     offset: u64,
-    primaries: u16,
-    transfer_function: u16,
-    matrix: u16,
+    primary_index: u16,
+    transfer_function_index: u16,
+    matrix_index: u16,
     matched: bool,
 }
 
@@ -220,9 +220,9 @@ impl ColrAtom {
             size: 0,
             color_parameter_type: ColorParameterType::Nclc,
             offset: 0,
-            primaries: 0,
-            transfer_function: 0,
-            matrix: 0,
+            primary_index: 0,
+            transfer_function_index: 0,
+            matrix_index: 0,
             matched: false,
         }
     }
@@ -256,7 +256,7 @@ struct ProResFrame {
     frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
-    transfer_characteristics: u8,
+    transfer_characteristic: u8,
     matrix_coefficients: u8,
 }
 
@@ -268,7 +268,7 @@ impl ProResFrame {
             frame_id: 0.0,
             frame_header_size: 0,
             color_primaries: 0,
-            transfer_characteristics: 0,
+            transfer_characteristic: 0,
             matrix_coefficients: 0,
         }
     }
@@ -294,10 +294,11 @@ fn main() {
     Video::encode(
         &mut file,
         &video,
-        args.primaries.parse::<u8>().unwrap(),
-        args.transfer_function.parse::<u8>().unwrap(),
-        args.matrix.parse::<u8>().unwrap(),
-    ).expect("Encode has some problem.");
+        args.primary_index,
+        args.transfer_function_index,
+        args.matrix_index,
+    )
+    .expect("Encode has some problem.");
     println!(
         "- Time elapsed after encoding the file: {:?}",
         now.elapsed()
