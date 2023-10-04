@@ -1,3 +1,4 @@
+use aho_corasick::AhoCorasick;
 use clap::Parser;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, Write};
@@ -31,18 +32,175 @@ static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
 static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
 
 #[derive(Debug)]
+struct Video {
+    colr_atom: ColrAtom,
+    gama_atom: GamaAtom,
+    frames: Vec<ProResFrame>,
+    frame_count: i64,
+}
+
+impl Video {
+    pub fn new() -> Self {
+        Self {
+            colr_atom: ColrAtom::new(),
+            gama_atom: GamaAtom::new(),
+            frames: Vec::new(),
+            frame_count: 0,
+        }
+    }
+
+    fn read_file(file_path: &str, read: Option<bool>, write: Option<bool>) -> Result<File, Error> {
+        let read_permission = read.unwrap_or(true);
+        let write_permission = write.unwrap_or(false);
+
+        let file = OpenOptions::new()
+            .read(read_permission)
+            .write(write_permission)
+            .open(file_path)?;
+
+        Ok(file)
+    }
+
+    fn decode(file_path: &str) -> Result<Self, Error> {
+        let file = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+
+        let mut video = Video::new();
+
+        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
+        let ac = AhoCorasick::new(search_patterns).unwrap();
+
+        for mat in ac.stream_find_iter(&file) {
+            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+
+            match mat {
+                Ok(mat) => match mat.pattern().as_u32() {
+                    0 => {
+                        video.colr_atom.offset = (mat.start() - 4) as u64;
+
+                        let mut size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset))?;
+                        file_to_seek.read_exact(&mut size_buf)?;
+                        video.colr_atom.size = u32::from_be_bytes(size_buf);
+
+                        let mut nclc_buf = [0; 2];
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.primaries = u16::from_be_bytes(nclc_buf);
+
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 14))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.transfer_function = u16::from_be_bytes(nclc_buf);
+
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 16))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.matrix = u16::from_be_bytes(nclc_buf);
+
+                        video.colr_atom.matched = true;
+                    }
+                    1 => {
+                        let offset = (mat.start() - 4) as u64;
+                        video.gama_atom.offsets.push(offset);
+
+                        let mut size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(offset))?;
+                        file_to_seek.read_exact(&mut size_buf)?;
+
+                        if size_buf == [0x00, 0x00, 0x00, 0x0c] {
+                            video.gama_atom.the_actual_gama_offset = offset;
+                            video.gama_atom.size = u32::from_be_bytes(size_buf);
+                            video.gama_atom.matched = true;
+
+                            let mut value_buf = size_buf;
+                            file_to_seek.seek(io::SeekFrom::Start(offset + 8))?;
+                            file_to_seek.read_exact(&mut value_buf)?;
+                            video.gama_atom.gama_value = u32::from_be_bytes(value_buf);
+                        }
+                    }
+                    2 => {
+                        let mut frame = ProResFrame::new();
+                        frame.offset = (mat.start() - 4) as u64;
+
+                        let mut frame_size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset))?;
+                        file_to_seek.read_exact(&mut frame_size_buf)?;
+                        frame.frame_size = u32::from_be_bytes(frame_size_buf);
+
+                        let mut frame_header_size_buf = [0; 2];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 8))?;
+                        file_to_seek.read_exact(&mut frame_header_size_buf)?;
+                        frame.frame_header_size = u16::from_be_bytes(frame_header_size_buf);
+
+                        let mut color_primaries_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 22))?;
+                        file_to_seek.read_exact(&mut color_primaries_buf)?;
+                        frame.color_primaries = u8::from_be_bytes(color_primaries_buf);
+
+                        let mut transfer_characteristics_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 23))?;
+                        file_to_seek.read_exact(&mut transfer_characteristics_buf)?;
+                        frame.transfer_characteristics =
+                            u8::from_be_bytes(transfer_characteristics_buf);
+
+                        let mut matrix_coefficients_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 24))?;
+                        file_to_seek.read_exact(&mut matrix_coefficients_buf)?;
+                        frame.matrix_coefficients = u8::from_be_bytes(matrix_coefficients_buf);
+
+                        video.frames.push(frame);
+                        video.frame_count += 1;
+                    }
+                    _ => unreachable!(),
+                },
+                Err(e) => {
+                    eprintln!("Error reading file: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(video)
+    }
+
+    fn encode(
+        file: &mut File,
+        video: &Video,
+        target_color_primaries: u8,
+        target_transfer_functions: u8,
+        target_matrix: u8,
+    ) -> io::Result<()> {
+        // Overwrite mov colr atom
+        let buf = [
+            0,
+            target_color_primaries,
+            0,
+            target_transfer_functions,
+            0,
+            target_matrix,
+        ];
+        file.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
+        file.write_all(&buf)?;
+
+        file.sync_all().expect("File.sync_all() has some problem.");
+
+        for frame in video.frames.iter() {
+            let buf = [
+                target_color_primaries,
+                target_transfer_functions,
+                target_matrix,
+            ];
+            file.seek(io::SeekFrom::Start(frame.offset + 22))?;
+            file.write_all(&buf)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 enum ColorParameterType {
     Nclc, // for video
     Prof, // for print
     Unknown,
-}
-
-trait AtomTrait {
-    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
-        buffer
-            .windows(pattern.len())
-            .position(|window| window == pattern)
-    }
 }
 
 #[derive(Debug)]
@@ -53,6 +211,7 @@ struct ColrAtom {
     primaries: u16,
     transfer_function: u16,
     matrix: u16,
+    matched: bool,
 }
 
 impl ColrAtom {
@@ -64,147 +223,86 @@ impl ColrAtom {
             primaries: 0,
             transfer_function: 0,
             matrix: 0,
+            matched: false,
         }
-    }
-
-    fn search(file: &mut File, pattern: &[u8]) -> Result<Self, Error> {
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-
-        let pattern_position = Self::find_pattern_position(&buffer, pattern);
-
-        if let Some(offset) = pattern_position {
-            let mut atom = Self::new();
-
-            // Set the offset to the position on the pattern match 4 bytes forward.
-            atom.offset = (offset - 4) as u64;
-
-            // From there until the next 4 bytes are size.
-            atom.size = u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
-
-            atom.primaries =
-                u16::from_be_bytes(buffer[offset + 8..offset + 10].try_into().unwrap());
-
-            atom.transfer_function =
-                u16::from_be_bytes(buffer[offset + 10..offset + 12].try_into().unwrap());
-
-            atom.matrix = u16::from_be_bytes(buffer[offset + 12..offset + 14].try_into().unwrap());
-
-            return Ok(atom);
-        }
-
-        Err(Error::new(
-            io::ErrorKind::NotFound,
-            "Atom pattern was not found in the file.",
-        ))
-    }
-
-    fn overwrite(self, file: &mut File, target_colr_tags: &[u8; 3]) -> Result<(), Error> {
-        let primary = target_colr_tags[0];
-        let transfer_function = target_colr_tags[1];
-        let matrix = target_colr_tags[2];
-
-        let buf = &[0, primary, 0, transfer_function, 0, matrix];
-        file.seek(io::SeekFrom::Start(self.offset + 12))?;
-        file.write_all(buf)?;
-
-        file.sync_all().expect("file sync all has some problem");
-
-        Ok(())
     }
 }
 
-impl AtomTrait for ColrAtom {}
-
+#[derive(Debug)]
 struct GamaAtom {
-    size: u8,
-    data: u32,
-    offset: u64,
+    size: u32,
+    gama_value: u32,
+    offsets: Vec<u64>,
+    the_actual_gama_offset: u64,
+    matched: bool,
 }
 
-impl AtomTrait for GamaAtom {
-    fn find_pattern_position(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
-        todo!()
+impl GamaAtom {
+    fn new() -> GamaAtom {
+        Self {
+            size: 0,
+            gama_value: 0,
+            offsets: Vec::new(),
+            the_actual_gama_offset: 0,
+            matched: false,
+        }
     }
 }
 
+#[derive(Debug)]
 struct ProResFrame {
     offset: u64,
     frame_size: u32,
-    frame_id: f32,
-    frame_header: ProResFrameHeader,
-}
-
-struct ProResFrameHeader {
-    offset: u64,
+    frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
-    transfer_characteristic: u8,
+    transfer_characteristics: u8,
     matrix_coefficients: u8,
+}
+
+impl ProResFrame {
+    fn new() -> Self {
+        Self {
+            offset: 0,
+            frame_size: 0,
+            frame_id: 0.0,
+            frame_header_size: 0,
+            color_primaries: 0,
+            transfer_characteristics: 0,
+            matrix_coefficients: 0,
+        }
+    }
 }
 
 fn main() {
     let args = Args::parse();
 
-    // Open file stream
-    let mut stream = match OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(args.input_file_path)
-    {
-        Ok(file) => {
-            println!("File opened...");
-            file
-        }
-        Err(e) => panic!("An error occurred when open file: {}", e),
-    };
-
-    // Fetch colr atom information from file stream.
-    let start = Instant::now();
-    let colr_atom_found = match ColrAtom::search(&mut stream, &COLR_ATOM_HEADER) {
-        Ok(atom) => {
-            println!("Found atom: \n\t{:?}", atom);
-            Some(atom)
-        }
-        Err(e) => {
-            println!("An error occurred: {}", e);
-            None
-        }
-    };
-    let duration = start.elapsed();
+    let now = Instant::now();
+    let video = Video::decode(args.input_file_path.as_str()).unwrap();
     println!(
-        "Time elapsed in this search implementation is: {:?}",
-        duration
+        "- Time elapsed after decoding the file: {:?}",
+        now.elapsed()
     );
 
-    // Overwrite colr atom
-    let primaries = match args.primaries.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for primaries is not a valid integer in the range of 0 to 255");
-            return;
-        }
-    };
-    let transfer_function = match args.transfer_function.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for transfer_function is not a valid integer in the range of 0 to 255");
-            return;
-        }
-    };
-    let matrix = match args.matrix.parse::<u8>() {
-        Ok(value) => value,
-        Err(_) => {
-            eprintln!("Error: The provided value for matrix is not a valid integer in the range of 0 to 255");
-            return;
-        }
-    };
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(args.input_file_path.as_str())
+        .unwrap();
 
-    let colr_target: [u8; 3] = [primaries, transfer_function, matrix];
+    let now = Instant::now();
+    Video::encode(
+        &mut file,
+        &video,
+        args.primaries.parse::<u8>().unwrap(),
+        args.transfer_function.parse::<u8>().unwrap(),
+        args.matrix.parse::<u8>().unwrap(),
+    ).expect("Encode has some problem.");
+    println!(
+        "- Time elapsed after encoding the file: {:?}",
+        now.elapsed()
+    );
 
-    let colr_atom_found = colr_atom_found.unwrap();
-
-    colr_atom_found
-        .overwrite(&mut stream, &colr_target)
-        .expect("Something bad happened when overwrite colr atom.");
+    let mut file = OpenOptions::new().write(true).open("output.txt").unwrap();
+    writeln!(file, "{:#?}", video).unwrap();
 }
