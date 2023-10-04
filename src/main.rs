@@ -62,7 +62,8 @@ impl Video {
     }
 
     fn decode(file_path: &str) -> Result<Self, Error> {
-        let file = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+        let file = Self::read_file(file_path, Some(true), Some(false))
+            .expect("Some issue occur when reading file.");
 
         let mut video = Video::new();
 
@@ -70,7 +71,7 @@ impl Video {
         let ac = AhoCorasick::new(search_patterns).unwrap();
 
         for mat in ac.stream_find_iter(&file) {
-            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(false)).unwrap();
 
             match mat {
                 Ok(mat) => match mat.pattern().as_u32() {
