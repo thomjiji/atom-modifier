@@ -1,7 +1,9 @@
+use aho_corasick::AhoCorasick;
 use clap::Parser;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, Write};
 use std::io::{Error, Read};
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -59,94 +61,101 @@ impl Video {
         Ok(file)
     }
 
-    fn decode(file: &mut File) -> Result<Self, Error> {
+    fn decode(file_path: &str) -> Result<Self, Error> {
+        let mut file = Self::read_file(file_path, Some(true), Some(true)).unwrap();
+
         let mut video = Video::new();
 
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
+        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
+        let ac = AhoCorasick::new(search_patterns).unwrap();
 
-        video.colr_atom.search(buffer.as_slice());
+        for mat in ac.stream_find_iter(&file) {
+            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(true)).unwrap();
 
-        // Handle colr atom
-        if video.colr_atom.matched {
-            video.colr_atom.size = u32::from_be_bytes(
-                buffer[video.colr_atom.offset as usize..(video.colr_atom.offset + 4) as usize]
-                    .try_into()
-                    .unwrap(),
-            );
+            match mat {
+                Ok(mat) => match mat.pattern().as_u32() {
+                    0 => {
+                        video.colr_atom.offset = (mat.start() - 4) as u64;
 
-            video.colr_atom.primaries = u16::from_be_bytes(
-                buffer[(video.colr_atom.offset + 12) as usize
-                    ..(video.colr_atom.offset + 14) as usize]
-                    .try_into()
-                    .unwrap(),
-            );
+                        let mut size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset))?;
+                        file_to_seek.read_exact(&mut size_buf)?;
+                        video.colr_atom.size = u32::from_be_bytes(size_buf);
 
-            video.colr_atom.transfer_function = u16::from_be_bytes(
-                buffer[(video.colr_atom.offset + 14) as usize
-                    ..(video.colr_atom.offset + 16) as usize]
-                    .try_into()
-                    .unwrap(),
-            );
+                        let mut nclc_buf = [0; 2];
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.primaries = u16::from_be_bytes(nclc_buf);
 
-            video.colr_atom.matrix = u16::from_be_bytes(
-                buffer[(video.colr_atom.offset + 16) as usize
-                    ..(video.colr_atom.offset + 18) as usize]
-                    .try_into()
-                    .unwrap(),
-            );
-        }
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 14))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.transfer_function = u16::from_be_bytes(nclc_buf);
 
-        // Handle each frame
-        loop {
-            let mut frame = ProResFrame::new();
-            match frame.search(buffer.as_slice()) {
-                Some(offset) => {
-                    if video.frames.is_empty() {
-                        frame.offset = (offset - 4) as u64;
-                    } else {
-                        let last_frame = video
-                            .frames
-                            .last()
-                            .expect("Unexpectedly, no last frame was found.");
-                        // next pos/offset = previous pos/offset + previous frame size
-                        frame.offset = last_frame.offset + last_frame.frame_size as u64;
+                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 16))?;
+                        file_to_seek.read_exact(&mut nclc_buf)?;
+                        video.colr_atom.matrix = u16::from_be_bytes(nclc_buf);
+
+                        video.colr_atom.matched = true;
                     }
+                    1 => {
+                        let offset = (mat.start() - 4) as u64;
+                        video.gama_atom.offsets.push(offset);
 
-                    frame.frame_size =
-                        u32::from_be_bytes(buffer[offset - 4..offset].try_into().unwrap());
+                        let mut size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(offset))?;
+                        file_to_seek.read_exact(&mut size_buf)?;
 
-                    frame.frame_header_size =
-                        u16::from_be_bytes(buffer[offset + 4..offset + 6].try_into().unwrap());
+                        if size_buf == [0x00, 0x00, 0x00, 0x0c] {
+                            video.gama_atom.the_actual_gama_offset = offset;
+                            video.gama_atom.size = u32::from_be_bytes(size_buf);
+                            video.gama_atom.matched = true;
 
-                    frame.color_primaries =
-                        u8::from_be_bytes(buffer[offset + 18..offset + 19].try_into().unwrap());
-
-                    frame.transfer_characteristics =
-                        u8::from_be_bytes(buffer[offset + 19..offset + 20].try_into().unwrap());
-
-                    frame.matrix_coefficients =
-                        u8::from_be_bytes(buffer[offset + 20..offset + 21].try_into().unwrap());
-
-                    video.frames.push(frame);
-                    video.frame_count += 1;
-                }
-                None => {
-                    if video.frames.is_empty() {
-                        println!("No ProRes frame was found in the file.");
-                        break;
-                    } else if buffer.len() < video.frames.last().unwrap().frame_size as usize {
-                        println!("Reach the end of the file stream.");
-                        break;
-                    } else {
-                        // Temporary solution for non-icpf frame: set the frame_id to -1.0.
-                        frame.frame_id = -1.0;
+                            let mut value_buf = size_buf;
+                            file_to_seek.seek(io::SeekFrom::Start(offset + 8))?;
+                            file_to_seek.read_exact(&mut value_buf)?;
+                            video.gama_atom.gama_value = u32::from_be_bytes(value_buf);
+                        }
                     }
-                }
-            };
+                    2 => {
+                        let mut frame = ProResFrame::new();
+                        frame.offset = (mat.start() - 4) as u64;
 
-            let previous_frame_size = video.frames.last().unwrap().frame_size;
-            buffer = buffer.split_off(previous_frame_size as usize);
+                        let mut frame_size_buf = [0; 4];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset))?;
+                        file_to_seek.read_exact(&mut frame_size_buf)?;
+                        frame.frame_size = u32::from_be_bytes(frame_size_buf);
+
+                        let mut frame_header_size_buf = [0; 2];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 8))?;
+                        file_to_seek.read_exact(&mut frame_header_size_buf)?;
+                        frame.frame_header_size = u16::from_be_bytes(frame_header_size_buf);
+
+                        let mut color_primaries_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 22))?;
+                        file_to_seek.read_exact(&mut color_primaries_buf)?;
+                        frame.color_primaries = u8::from_be_bytes(color_primaries_buf);
+
+                        let mut transfer_characteristics_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 23))?;
+                        file_to_seek.read_exact(&mut transfer_characteristics_buf)?;
+                        frame.transfer_characteristics =
+                            u8::from_be_bytes(transfer_characteristics_buf);
+
+                        let mut matrix_coefficients_buf = [0; 1];
+                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 24))?;
+                        file_to_seek.read_exact(&mut matrix_coefficients_buf)?;
+                        frame.matrix_coefficients = u8::from_be_bytes(matrix_coefficients_buf);
+
+                        video.frames.push(frame);
+                        video.frame_count += 1;
+                    }
+                    _ => unreachable!(),
+                },
+                Err(e) => {
+                    eprintln!("Error reading file: {}", e);
+                    return Err(e);
+                }
+            }
         }
 
         Ok(video)
@@ -327,30 +336,25 @@ impl ProResFrame {
         }
     }
 
-    fn search(&mut self, buffer: &[u8]) -> Option<usize> {
-        buffer
-            .windows(FRAME_HEADER.len())
-            .position(|window| window == FRAME_HEADER)
+    fn build(&mut self, file: &mut File) -> io::Result<()> {
+        let mut buf: [u8; 4] = [0; 4];
+        file.seek(io::SeekFrom::Start(self.offset))?;
+        file.read_exact(&mut buf);
+        self.frame_size = u32::from_be_bytes(buf);
+        Ok(())
     }
 }
 
 fn main() {
     let args = Args::parse();
 
-    let mut file = match Video::read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Error reading file: {}", e);
-            return;
-        }
-    };
-    let video = Video::decode(&mut file);
-    Video::encode(
-        &mut file,
-        video.unwrap(),
-        args.primaries.parse().unwrap(),
-        args.transfer_function.parse().unwrap(),
-        args.matrix.parse().unwrap(),
-    )
-    .expect("Encode has some problem.");
+    let now = Instant::now();
+    let video = Video::decode(args.input_file_path.as_str()).unwrap();
+    println!("- Time elapsed: {:?}", now.elapsed());
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .open("output.txt").unwrap();
+
+    writeln!(file, "{:#?}", video).unwrap();
 }
