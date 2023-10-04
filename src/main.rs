@@ -204,15 +204,15 @@ impl Video {
 
 #[derive(Debug)]
 enum ColorParameterType {
-    Nclc, // for video
-    Prof, // for print
-    Unknown,
+    Nclc,  // for video
+    _Prof, // for print
+    _Unknown,
 }
 
 #[derive(Debug)]
 struct ColrAtom {
     size: u32,
-    color_parameter_type: ColorParameterType,
+    _color_parameter_type: ColorParameterType,
     offset: u64,
     primary_index: u16,
     transfer_function_index: u16,
@@ -224,7 +224,7 @@ impl ColrAtom {
     fn new() -> ColrAtom {
         Self {
             size: 0,
-            color_parameter_type: ColorParameterType::Nclc,
+            _color_parameter_type: ColorParameterType::Nclc,
             offset: 0,
             primary_index: 0,
             transfer_function_index: 0,
@@ -265,7 +265,7 @@ impl GamaAtom {
 struct ProResFrame {
     offset: u64,
     frame_size: u32,
-    frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
+    _frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
     transfer_characteristic: u8,
@@ -277,7 +277,7 @@ impl ProResFrame {
         Self {
             offset: 0,
             frame_size: 0,
-            frame_id: 0.0,
+            _frame_id: 0.0,
             frame_header_size: 0,
             color_primaries: 0,
             transfer_characteristic: 0,
@@ -324,6 +324,11 @@ fn main() {
         now.elapsed()
     );
 
-    let mut file = OpenOptions::new().write(true).open("output.txt").unwrap();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("output.txt")
+        .unwrap();
     writeln!(file, "{:#?}", video).unwrap();
+    // println!("{:#?}", video);
 }
