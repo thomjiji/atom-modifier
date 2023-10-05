@@ -23,8 +23,8 @@ struct Args {
     #[arg(short, long)]
     matrix_index: u8,
 
-    #[arg(short, long, default_value_t = 0)]
-    gama_value: u32,
+    #[arg(short, long, default_value_t = -1.0)]
+    gama_value: f32,
 }
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
@@ -61,11 +61,9 @@ impl Video {
         Ok(file)
     }
 
-    fn decode(file_path: &str) -> Result<Self, Error> {
+    fn decode(&mut self, file_path: &str) -> Result<(), Error> {
         let file = Self::read_file(file_path, Some(true), Some(false))
             .expect("Some issue occur when reading file.");
-
-        let mut video = Video::new();
 
         let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
         let ac = AhoCorasick::new(search_patterns).unwrap();
@@ -77,46 +75,46 @@ impl Video {
                 Ok(mat) => match mat.pattern().as_u32() {
                     // Construct colr atom
                     0 => {
-                        video.colr_atom.offset = (mat.start() - 4) as u64;
+                        self.colr_atom.offset = (mat.start() - 4) as u64;
 
                         let mut size_buf = [0; 4];
-                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset))?;
+                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
                         file_to_seek.read_exact(&mut size_buf)?;
-                        video.colr_atom.size = u32::from_be_bytes(size_buf);
+                        self.colr_atom.size = u32::from_be_bytes(size_buf);
 
                         let mut nclc_buf = [0; 2];
-                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
+                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
+                        self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
 
-                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 14))?;
+                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
+                        self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
 
-                        file_to_seek.seek(io::SeekFrom::Start(video.colr_atom.offset + 16))?;
+                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
                         file_to_seek.read_exact(&mut nclc_buf)?;
-                        video.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
+                        self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
 
-                        video.colr_atom.matched = true;
+                        self.colr_atom.matched = true;
                     }
                     // Construct gama atom
                     1 => {
                         let offset = (mat.start() - 4) as u64;
-                        video.gama_atom.offsets.push(offset);
+                        self.gama_atom.offsets.push(offset);
 
                         let mut size_buf = [0; 4];
                         file_to_seek.seek(io::SeekFrom::Start(offset))?;
                         file_to_seek.read_exact(&mut size_buf)?;
 
                         if size_buf == [0x00, 0x00, 0x00, 0x0c] {
-                            video.gama_atom.the_actual_gama_offset = offset;
-                            video.gama_atom.size = u32::from_be_bytes(size_buf);
-                            video.gama_atom.matched = true;
+                            self.gama_atom.the_actual_gama_offset = offset;
+                            self.gama_atom.size = u32::from_be_bytes(size_buf);
+                            self.gama_atom.matched = true;
 
                             let mut value_buf = size_buf;
                             file_to_seek.seek(io::SeekFrom::Start(offset + 8))?;
                             file_to_seek.read_exact(&mut value_buf)?;
-                            video.gama_atom.gama_value = u32::from_be_bytes(value_buf);
+                            self.gama_atom.gama_value = u32::from_be_bytes(value_buf);
                         }
                     }
                     // Construct each ProRes frame
@@ -150,8 +148,8 @@ impl Video {
                         file_to_seek.read_exact(&mut matrix_coefficients_buf)?;
                         frame.matrix_coefficients = u8::from_be_bytes(matrix_coefficients_buf);
 
-                        video.frames.push(frame);
-                        video.frame_count += 1;
+                        self.frames.push(frame);
+                        self.frame_count += 1;
                     }
                     _ => unreachable!(),
                 },
@@ -163,15 +161,17 @@ impl Video {
             }
         }
 
-        Ok(video)
+        Ok(())
     }
 
     fn encode(
+        &self,
         file: &mut File,
         video: &Video,
         target_color_primaries: u8,
         target_transfer_functions: u8,
         target_matrix: u8,
+        target_gama_value: f32,
     ) -> io::Result<()> {
         // Overwrite mov colr atom
         let buf = [
@@ -198,7 +198,33 @@ impl Video {
             file.write_all(&buf)?;
         }
 
+        // Overwrite gama atom
+        //
+        // If gama atom matched, it means that the original file has gama atom and also
+        // has gama value. At this time, -g of args can work, and the original gama
+        // value is overwritten with the value given by -g. If gama atom doesn't match,
+        // just ignore the -g arg.
+        if self.gama_atom.matched
+            && self.gama_atom.the_actual_gama_offset != 0
+            && target_gama_value != -1.0
+        {
+            let new_gama_value = Self::float_to_fixed_point_bytes(target_gama_value);
+            file.seek(io::SeekFrom::Start(
+                video.gama_atom.the_actual_gama_offset + 8,
+            ))?;
+            file.write_all(&new_gama_value)?;
+        }
+
         Ok(())
+    }
+
+    fn float_to_fixed_point_bytes(input_gama_value: f32) -> [u8; 4] {
+        let fixed_value = (input_gama_value * 65536_f32) as i32;
+        fixed_value.to_be_bytes()
+    }
+
+    fn fixed_point_hex_to_float(input_gama_value: u32) -> f64 {
+        input_gama_value as f64 / 65536_f64
     }
 }
 
@@ -290,13 +316,16 @@ fn main() {
     let args = Args::parse();
 
     let now = Instant::now();
-    let video = Video::decode(args.input_file_path.as_str()).unwrap_or_else(|e| {
-        eprintln!(
-            "Error decoding (constructing colr, gama atom and each frames) video: {}",
-            e
-        );
-        std::process::exit(1);
-    });
+    let mut video = Video::new();
+    video
+        .decode(args.input_file_path.as_str())
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "Error decoding (constructing colr, gama atom and each frames) video: {}",
+                e
+            );
+            std::process::exit(1);
+        });
     println!(
         "- Time elapsed after decoding the file: {:?}",
         now.elapsed()
@@ -311,14 +340,16 @@ fn main() {
     };
 
     let now = Instant::now();
-    Video::encode(
-        &mut file,
-        &video,
-        args.primary_index,
-        args.transfer_function_index,
-        args.matrix_index,
-    )
-    .expect("Encode has some problem.");
+    video
+        .encode(
+            &mut file,
+            &video,
+            args.primary_index,
+            args.transfer_function_index,
+            args.matrix_index,
+            args.gama_value,
+        )
+        .expect("Encode has some problem.");
     println!(
         "- Time elapsed after encoding the file: {:?}",
         now.elapsed()
@@ -327,8 +358,8 @@ fn main() {
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
-        .open("output.txt")
-        .unwrap();
+        .open("output.log")
+        .expect("Failed to write/find the log file.");
     writeln!(file, "{:#?}", video).unwrap();
     // println!("{:#?}", video);
 }
