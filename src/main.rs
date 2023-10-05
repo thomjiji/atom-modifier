@@ -73,93 +73,99 @@ impl Video {
 
             match mat {
                 Ok(mat) => match mat.pattern().as_u32() {
-                    // Construct colr atom
-                    0 => {
-                        self.colr_atom.offset = (mat.start() - 4) as u64;
-
-                        let mut size_buf = [0; 4];
-                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
-                        file_to_seek.read_exact(&mut size_buf)?;
-                        self.colr_atom.size = u32::from_be_bytes(size_buf);
-
-                        let mut nclc_buf = [0; 2];
-                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
-                        file_to_seek.read_exact(&mut nclc_buf)?;
-                        self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
-
-                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
-                        file_to_seek.read_exact(&mut nclc_buf)?;
-                        self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
-
-                        file_to_seek.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
-                        file_to_seek.read_exact(&mut nclc_buf)?;
-                        self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
-
-                        self.colr_atom.matched = true;
-                    }
-                    // Construct gama atom
-                    1 => {
-                        let offset = (mat.start() - 4) as u64;
-                        self.gama_atom.offsets.push(offset);
-
-                        let mut size_buf = [0; 4];
-                        file_to_seek.seek(io::SeekFrom::Start(offset))?;
-                        file_to_seek.read_exact(&mut size_buf)?;
-
-                        if size_buf == [0x00, 0x00, 0x00, 0x0c] {
-                            self.gama_atom.the_actual_gama_offset = offset;
-                            self.gama_atom.size = u32::from_be_bytes(size_buf);
-                            self.gama_atom.matched = true;
-
-                            let mut value_buf = size_buf;
-                            file_to_seek.seek(io::SeekFrom::Start(offset + 8))?;
-                            file_to_seek.read_exact(&mut value_buf)?;
-                            self.gama_atom.gama_value = u32::from_be_bytes(value_buf);
-                        }
-                    }
-                    // Construct each ProRes frame
-                    2 => {
-                        let mut frame = ProResFrame::new();
-                        frame.offset = (mat.start() - 4) as u64;
-
-                        let mut frame_size_buf = [0; 4];
-                        file_to_seek.seek(io::SeekFrom::Start(frame.offset))?;
-                        file_to_seek.read_exact(&mut frame_size_buf)?;
-                        frame.frame_size = u32::from_be_bytes(frame_size_buf);
-
-                        let mut frame_header_size_buf = [0; 2];
-                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 8))?;
-                        file_to_seek.read_exact(&mut frame_header_size_buf)?;
-                        frame.frame_header_size = u16::from_be_bytes(frame_header_size_buf);
-
-                        let mut color_primaries_buf = [0; 1];
-                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 22))?;
-                        file_to_seek.read_exact(&mut color_primaries_buf)?;
-                        frame.color_primaries = u8::from_be_bytes(color_primaries_buf);
-
-                        let mut transfer_characteristics_buf = [0; 1];
-                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 23))?;
-                        file_to_seek.read_exact(&mut transfer_characteristics_buf)?;
-                        frame.transfer_characteristic =
-                            u8::from_be_bytes(transfer_characteristics_buf);
-
-                        let mut matrix_coefficients_buf = [0; 1];
-                        file_to_seek.seek(io::SeekFrom::Start(frame.offset + 24))?;
-                        file_to_seek.read_exact(&mut matrix_coefficients_buf)?;
-                        frame.matrix_coefficients = u8::from_be_bytes(matrix_coefficients_buf);
-
-                        self.frames.push(frame);
-                        self.frame_count += 1;
-                    }
+                    0 => self.construct_colr_atom(&mut file_to_seek, mat.start() - 4)?,
+                    1 => self.construct_gama_atom(&mut file_to_seek, mat.start() - 4)?,
+                    2 => self.construct_prores_frame(&mut file_to_seek, mat.start() - 4)?,
                     _ => unreachable!(),
                 },
-                // An error is yielded if there was a problem reading from the reader given.
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
                     return Err(e);
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
+        self.colr_atom.offset = offset as u64;
+
+        let mut size_buf = [0; 4];
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
+        file.read_exact(&mut size_buf)?;
+        self.colr_atom.size = u32::from_be_bytes(size_buf);
+
+        let mut nclc_buf = [0; 2];
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
+
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
+
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
+
+        self.colr_atom.matched = true;
+
+        Ok(())
+    }
+
+    fn construct_gama_atom(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
+        self.gama_atom.offsets.push(offset as u64);
+
+        let mut size_buf = [0; 4];
+        file.seek(io::SeekFrom::Start(offset as u64))?;
+        file.read_exact(&mut size_buf)?;
+
+        if size_buf == [0x00, 0x00, 0x00, 0x0c] {
+            self.gama_atom.the_actual_gama_offset = offset as u64;
+            self.gama_atom.size = u32::from_be_bytes(size_buf);
+            self.gama_atom.matched = true;
+
+            let mut value_buf = size_buf;
+            file.seek(io::SeekFrom::Start(offset as u64 + 8))?;
+            file.read_exact(&mut value_buf)?;
+            self.gama_atom.gama_value = u32::from_be_bytes(value_buf);
+        }
+
+        Ok(())
+    }
+
+    fn construct_prores_frame(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
+        let mut frame = ProResFrame::new();
+        frame.offset = offset as u64;
+
+        let mut frame_size_buf = [0; 4];
+        file.seek(io::SeekFrom::Start(frame.offset))?;
+        file.read_exact(&mut frame_size_buf)?;
+        frame.frame_size = u32::from_be_bytes(frame_size_buf);
+
+        let mut frame_header_size_buf = [0; 2];
+        file.seek(io::SeekFrom::Start(frame.offset + 8))?;
+        file.read_exact(&mut frame_header_size_buf)?;
+        frame.frame_header_size = u16::from_be_bytes(frame_header_size_buf);
+
+        let mut color_primaries_buf = [0; 1];
+        file.seek(io::SeekFrom::Start(frame.offset + 22))?;
+        file.read_exact(&mut color_primaries_buf)?;
+        frame.color_primaries = u8::from_be_bytes(color_primaries_buf);
+
+        let mut transfer_characteristics_buf = [0; 1];
+        file.seek(io::SeekFrom::Start(frame.offset + 23))?;
+        file.read_exact(&mut transfer_characteristics_buf)?;
+        frame.transfer_characteristic = u8::from_be_bytes(transfer_characteristics_buf);
+
+        let mut matrix_coefficients_buf = [0; 1];
+        file.seek(io::SeekFrom::Start(frame.offset + 24))?;
+        file.read_exact(&mut matrix_coefficients_buf)?;
+        frame.matrix_coefficients = u8::from_be_bytes(matrix_coefficients_buf);
+
+        self.frames.push(frame);
+        self.frame_count += 1;
 
         Ok(())
     }
