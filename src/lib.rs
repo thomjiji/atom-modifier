@@ -99,22 +99,20 @@ pub struct Video {
 }
 
 impl Video {
-    pub fn read_file(
-        file_path: &str,
-        read: Option<bool>,
-        write: Option<bool>,
-    ) -> Result<File, Error> {
-        let read_permission = read.unwrap_or(true);
-        let write_permission = write.unwrap_or(false);
-
-        let file = OpenOptions::new()
-            .read(read_permission)
-            .write(write_permission)
-            .open(file_path)?;
-
-        Ok(file)
-    }
-
+    /// Decodes a video file and constructs the corresponding atoms and frames.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - A string slice that holds the path to the video file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atom_modifier::Video;
+    ///
+    /// let mut video = Video::default();
+    /// video.decode("tests/footages/1-1-1_2frames_prores422.mov").unwrap();
+    /// ```
     pub fn decode(&mut self, file_path: &str) -> Result<(), Error> {
         let file = OpenOptions::new()
             .read(true)
