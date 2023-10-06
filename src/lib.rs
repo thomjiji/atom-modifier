@@ -10,9 +10,6 @@ pub struct Args {
     #[arg(short, long = "input-file-path", value_name = "FILE")]
     pub input_file_path: String,
 
-    #[arg(short, long = "show-property")]
-    show_property: Option<String>,
-
     #[arg(short, long = "primary", value_name = "INDEX_VALUE")]
     /// Change the "color primaries index" to <INDEX_VALUE>
     pub primary_index: u8,
