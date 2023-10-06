@@ -31,7 +31,7 @@ static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
 static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
 static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 enum ColorParameterType {
     #[default]
     Nclc, // for video
@@ -39,7 +39,7 @@ enum ColorParameterType {
     _Unknown,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 struct ColrAtom {
     size: u32,
     _color_parameter_type: ColorParameterType,
@@ -50,7 +50,7 @@ struct ColrAtom {
     matched: bool,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 struct GamaAtom {
     size: u32,
     // The actual gama value: for example 2.4, 2.2, etc (It looks like this in
@@ -65,7 +65,7 @@ struct GamaAtom {
     matched: bool,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, PartialEq)]
 struct ProResFrame {
     offset: u64,
     frame_size: u32,
@@ -90,7 +90,7 @@ impl ProResFrame {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Video {
     colr_atom: ColrAtom,
     gama_atom: GamaAtom,
@@ -288,5 +288,111 @@ impl Video {
 
     fn _fixed_point_hex_to_float(input_gama_value: u32) -> f64 {
         input_gama_value as f64 / 65536_f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ColorParameterType::Nclc;
+
+    #[test]
+    fn test_decode() {
+        let mut video_111 = Video::default();
+
+        video_111
+            .decode("tests/footages/1-1-1_2frames_prores422.mov")
+            .expect("Some issue occur when decoding '1-1-1_2frames_prores422.mov'.");
+
+        let expected_result_111 = Video {
+            colr_atom: ColrAtom {
+                size: 18,
+                _color_parameter_type: Nclc,
+                offset: 1234280,
+                primary_index: 1,
+                transfer_function_index: 1,
+                matrix_index: 1,
+                matched: true,
+            },
+            gama_atom: GamaAtom {
+                size: 0,
+                gama_value: 0,
+                offsets: [].to_vec(),
+                the_actual_gama_offset: 0,
+                matched: false,
+            },
+            frames: [
+                ProResFrame {
+                    offset: 40,
+                    frame_size: 616448,
+                    _frame_id: 0.0,
+                    frame_header_size: 148,
+                    color_primaries: 1,
+                    transfer_characteristic: 1,
+                    matrix_coefficients: 1,
+                },
+                ProResFrame {
+                    offset: 616488,
+                    frame_size: 617195,
+                    _frame_id: 0.0,
+                    frame_header_size: 148,
+                    color_primaries: 1,
+                    transfer_characteristic: 1,
+                    matrix_coefficients: 1,
+                },
+            ]
+            .to_vec(),
+            frame_count: 2,
+        };
+
+        let mut video_121 = Video::default();
+
+        video_121
+            .decode("tests/footages/1-2-1_2frames_prores422.mov")
+            .expect("Some issue occur when decoding '1-2-1_2frames_prores422.mov'.");
+
+        let expected_result_121 = Video {
+            colr_atom: ColrAtom {
+                size: 18,
+                _color_parameter_type: Nclc,
+                offset: 1234292,
+                primary_index: 1,
+                transfer_function_index: 2,
+                matrix_index: 1,
+                matched: true,
+            },
+            gama_atom: GamaAtom {
+                size: 12,
+                gama_value: 157286,
+                offsets: [1234280].to_vec(),
+                the_actual_gama_offset: 1234280,
+                matched: true,
+            },
+            frames: [
+                ProResFrame {
+                    offset: 40,
+                    frame_size: 616448,
+                    _frame_id: 0.0,
+                    frame_header_size: 148,
+                    color_primaries: 1,
+                    transfer_characteristic: 2,
+                    matrix_coefficients: 1,
+                },
+                ProResFrame {
+                    offset: 616488,
+                    frame_size: 617195,
+                    _frame_id: 0.0,
+                    frame_header_size: 148,
+                    color_primaries: 1,
+                    transfer_characteristic: 2,
+                    matrix_coefficients: 1,
+                },
+            ]
+            .to_vec(),
+            frame_count: 2,
+        };
+
+        assert_eq!(video_111, expected_result_111);
+        assert_eq!(video_121, expected_result_121);
     }
 }
