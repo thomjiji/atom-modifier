@@ -25,7 +25,11 @@ fn main() {
         now.elapsed()
     );
 
-    let mut file = match Video::read_file(args.input_file_path.as_str(), Some(true), Some(true)) {
+    let mut file = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(args.input_file_path)
+    {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Error reading input file: {}", e);

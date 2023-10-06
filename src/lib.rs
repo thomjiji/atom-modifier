@@ -119,14 +119,18 @@ impl Video {
     }
 
     pub fn decode(&mut self, file_path: &str) -> Result<(), Error> {
-        let file = Self::read_file(file_path, Some(true), Some(false))
+        let file = OpenOptions::new()
+            .read(true)
+            .open(file_path)
             .expect("Some issue occur when reading file.");
 
         let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
         let ac = AhoCorasick::new(search_patterns).unwrap();
 
         for mat in ac.stream_find_iter(&file) {
-            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(false))
+            let mut file_to_seek = OpenOptions::new()
+                .read(true)
+                .open(file_path)
                 .expect("Some issue occur when reading file.");
 
             match mat {
