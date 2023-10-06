@@ -126,7 +126,8 @@ impl Video {
         let ac = AhoCorasick::new(search_patterns).unwrap();
 
         for mat in ac.stream_find_iter(&file) {
-            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(false)).unwrap();
+            let mut file_to_seek = Self::read_file(file_path, Some(true), Some(false))
+                .expect("Some issue occur when reading file.");
 
             match mat {
                 Ok(mat) => match mat.pattern().as_u32() {
