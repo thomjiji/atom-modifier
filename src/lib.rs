@@ -99,52 +99,6 @@ pub struct Video {
 }
 
 impl Video {
-    /// Decodes a video file and constructs the corresponding atoms and frames.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_path` - A string slice that holds the path to the video file.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use atom_modifier::Video;
-    ///
-    /// let mut video = Video::default();
-    /// video.decode("tests/footages/1-1-1_2frames_prores422.mov").unwrap();
-    /// ```
-    pub fn decode(&mut self, file_path: &str) -> Result<(), Error> {
-        let file = OpenOptions::new()
-            .read(true)
-            .open(file_path)
-            .expect("Some issue occur when reading file.");
-
-        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
-        let ac = AhoCorasick::new(search_patterns).unwrap();
-
-        for mat in ac.stream_find_iter(&file) {
-            let mut file_to_seek = OpenOptions::new()
-                .read(true)
-                .open(file_path)
-                .expect("Some issue occur when reading file.");
-
-            match mat {
-                Ok(mat) => match mat.pattern().as_u32() {
-                    0 => self.construct_colr_atom(&mut file_to_seek, mat.start() - 4)?,
-                    1 => self.construct_gama_atom(&mut file_to_seek, mat.start() - 4)?,
-                    2 => self.construct_prores_frame(&mut file_to_seek, mat.start() - 4)?,
-                    _ => unreachable!(),
-                },
-                Err(e) => {
-                    eprintln!("Error reading file: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
         self.colr_atom.offset = offset as u64;
 
@@ -223,6 +177,46 @@ impl Video {
 
         self.frames.push(frame);
         self.frame_count += 1;
+
+        Ok(())
+    }
+
+    /// Decodes a video file and constructs the corresponding atoms and frames.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - A string slice that holds the path to the video file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atom_modifier::Video;
+    ///
+    /// let mut video = Video::default();
+    /// video.decode("tests/footages/1-1-1_2frames_prores422.mov").unwrap();
+    /// ```
+    pub fn decode(&mut self, file_path: &str) -> Result<(), Error> {
+        let file = OpenOptions::new().read(true).open(file_path)?;
+
+        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
+        let ac = AhoCorasick::new(search_patterns).unwrap();
+
+        for mat in ac.stream_find_iter(&file) {
+            let mut file_to_seek = OpenOptions::new().read(true).open(file_path)?;
+
+            match mat {
+                Ok(mat) => match mat.pattern().as_u32() {
+                    0 => self.construct_colr_atom(&mut file_to_seek, mat.start() - 4)?,
+                    1 => self.construct_gama_atom(&mut file_to_seek, mat.start() - 4)?,
+                    2 => self.construct_prores_frame(&mut file_to_seek, mat.start() - 4)?,
+                    _ => unreachable!(),
+                },
+                Err(e) => {
+                    eprintln!("Error reading file: {}", e);
+                    return Err(e);
+                }
+            }
+        }
 
         Ok(())
     }

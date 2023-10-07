@@ -15,7 +15,10 @@ fn main() {
         .decode(args.input_file_path.as_str())
         .unwrap_or_else(|e| {
             eprintln!(
-                "Error decoding (constructing colr, gama atom and each frames) video: {}",
+                "An error occurred while decoding the video during the construction of the 'colr', \
+                'gama' atom and frame processing stages. The error could be due to issues related \
+                to video file loading, incorrect format or corrupted data. Specific error \
+                reported: {}",
                 e
             );
             std::process::exit(1);
