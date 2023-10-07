@@ -15,11 +15,8 @@ fn main() {
         .decode(args.input_file_path.as_str())
         .unwrap_or_else(|e| {
             eprintln!(
-                "An error occurred while decoding the video during the construction of the 'colr', \
-                'gama' atom and frame processing stages. The error could be due to issues related \
-                to video file loading, incorrect format or corrupted data. Specific error \
-                reported: {}",
-                e
+                "Error decoding input file '{}': {}",
+                args.input_file_path, e
             );
             std::process::exit(1);
         });
@@ -31,11 +28,14 @@ fn main() {
     let mut file = match OpenOptions::new()
         .read(true)
         .write(true)
-        .open(args.input_file_path)
+        .open(&args.input_file_path)
     {
         Ok(file) => file,
         Err(e) => {
-            eprintln!("Error reading input file: {}", e);
+            eprintln!(
+                "Error when trying to open file '{}' in reading/writing mode: {}",
+                args.input_file_path, e
+            );
             std::process::exit(1);
         }
     };

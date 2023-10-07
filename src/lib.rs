@@ -2,7 +2,7 @@ use aho_corasick::AhoCorasick;
 use clap::Parser;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, Write};
-use std::io::{Error, Read};
+use std::io::Read;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -99,33 +99,44 @@ pub struct Video {
 }
 
 impl Video {
-    fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
-        self.colr_atom.offset = offset as u64;
+        /// Constructs a colr atom and sets its offset, size, primary index, transfer
+        /// function index, and matrix index.
+        ///
+        /// # Arguments
+        ///
+        /// * `file` - A mutable reference to a `File` object.
+        /// * `offset` - The offset of the colr atom as a `usize`.
+        ///
+        /// # Returns
+        ///
+        /// An `io::Result` indicating whether the operation was successful or not.
+        fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
+            self.colr_atom.offset = offset as u64;
 
-        let mut size_buf = [0; 4];
-        file.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
-        file.read_exact(&mut size_buf)?;
-        self.colr_atom.size = u32::from_be_bytes(size_buf);
+            let mut size_buf = [0; 4];
+            file.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
+            file.read_exact(&mut size_buf)?;
+            self.colr_atom.size = u32::from_be_bytes(size_buf);
 
-        let mut nclc_buf = [0; 2];
-        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
-        file.read_exact(&mut nclc_buf)?;
-        self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
+            let mut nclc_buf = [0; 2];
+            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
+            file.read_exact(&mut nclc_buf)?;
+            self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
 
-        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
-        file.read_exact(&mut nclc_buf)?;
-        self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
+            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
+            file.read_exact(&mut nclc_buf)?;
+            self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
 
-        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
-        file.read_exact(&mut nclc_buf)?;
-        self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
+            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
+            file.read_exact(&mut nclc_buf)?;
+            self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
 
-        self.colr_atom.matched = true;
+            self.colr_atom.matched = true;
 
-        Ok(())
-    }
+            Ok(())
+        }
 
-    fn construct_gama_atom(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
+    fn construct_gama_atom(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
         self.gama_atom.offsets.push(offset as u64);
 
         let mut size_buf = [0; 4];
@@ -146,7 +157,7 @@ impl Video {
         Ok(())
     }
 
-    fn construct_prores_frame(&mut self, file: &mut File, offset: usize) -> Result<(), Error> {
+    fn construct_prores_frame(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
         let mut frame = ProResFrame::new();
         frame.offset = offset as u64;
 
@@ -195,27 +206,28 @@ impl Video {
     /// let mut video = Video::default();
     /// video.decode("tests/footages/1-1-1_2frames_prores422.mov").unwrap();
     /// ```
-    pub fn decode(&mut self, file_path: &str) -> Result<(), Error> {
+    ///
+    /// # Notes
+    ///
+    /// This method only needs file has read permission.
+    pub fn decode(&mut self, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let file = OpenOptions::new().read(true).open(file_path)?;
 
         let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
-        let ac = AhoCorasick::new(search_patterns).unwrap();
+        let ac = AhoCorasick::new(search_patterns)?;
 
-        for mat in ac.stream_find_iter(&file) {
+        // error of result is std::io::Error
+        for result in ac.stream_find_iter(&file) {
+            let mat = result?;
+
             let mut file_to_seek = OpenOptions::new().read(true).open(file_path)?;
 
-            match mat {
-                Ok(mat) => match mat.pattern().as_u32() {
-                    0 => self.construct_colr_atom(&mut file_to_seek, mat.start() - 4)?,
-                    1 => self.construct_gama_atom(&mut file_to_seek, mat.start() - 4)?,
-                    2 => self.construct_prores_frame(&mut file_to_seek, mat.start() - 4)?,
-                    _ => unreachable!(),
-                },
-                Err(e) => {
-                    eprintln!("Error reading file: {}", e);
-                    return Err(e);
-                }
-            }
+            match mat.pattern().as_u32() {
+                0 => self.construct_colr_atom(&mut file_to_seek, mat.start() - 4)?,
+                1 => self.construct_gama_atom(&mut file_to_seek, mat.start() - 4)?,
+                2 => self.construct_prores_frame(&mut file_to_seek, mat.start() - 4)?,
+                _ => unreachable!(),
+            };
         }
 
         Ok(())
@@ -241,8 +253,6 @@ impl Video {
         ];
         file.seek(io::SeekFrom::Start(video.colr_atom.offset + 12))?;
         file.write_all(&buf)?;
-
-        file.sync_all().expect("File.sync_all() has some problem.");
 
         // Overwrite each ProRes frame
         for frame in video.frames.iter() {
