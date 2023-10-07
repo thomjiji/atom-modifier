@@ -25,20 +25,17 @@ fn main() {
         now.elapsed()
     );
 
-    let mut file = match OpenOptions::new()
+    let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(&args.input_file_path)
-    {
-        Ok(file) => file,
-        Err(e) => {
+        .unwrap_or_else(|e| {
             eprintln!(
-                "Error when trying to open file '{}' in reading/writing mode: {}",
+                "Error trying to open file '{}' in reading/writing mode: {}",
                 args.input_file_path, e
             );
             std::process::exit(1);
-        }
-    };
+        });
 
     let now = Instant::now();
     video
@@ -50,7 +47,10 @@ fn main() {
             args.matrix_index,
             args.gama_value,
         )
-        .expect("Encode has some problem.");
+        .unwrap_or_else(|e| {
+            eprintln!("Error encoding the file '{}': {}", args.input_file_path, e);
+            std::process::exit(1);
+        });
     println!(
         "- Time elapsed after encoding the file: {:?}",
         now.elapsed()
