@@ -1,8 +1,7 @@
 use aho_corasick::AhoCorasick;
 use clap::Parser;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Seek, Write};
-use std::io::Read;
+use std::io::{Read, self, Seek, Write};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -59,7 +58,7 @@ struct GamaAtom {
     // gama atom candidates
     offsets: Vec<u64>,
     // What is the real gama offset? As long as the four bytes before the gama
-    // offset/position candicate are in a specific pattern, i.e. like this: 0x00, 0x00,
+    // offset/position candidates are in a specific pattern, i.e. like this: 0x00, 0x00,
     // 0x00, 0x0c (It indicates the size of the gama atom, 12).
     the_actual_gama_offset: u64,
     matched: bool,
