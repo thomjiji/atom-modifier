@@ -98,43 +98,59 @@ pub struct Video {
 }
 
 impl Video {
-        /// Constructs a colr atom and sets its offset, size, primary index, transfer
-        /// function index, and matrix index.
-        ///
-        /// # Arguments
-        ///
-        /// * `file` - A mutable reference to a `File` object.
-        /// * `offset` - The offset of the colr atom as a `usize`.
-        ///
-        /// # Returns
-        ///
-        /// An `io::Result` indicating whether the operation was successful or not.
-        fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
-            self.colr_atom.offset = offset as u64;
+    /// Constructs a colr atom and sets its offset, size, primary index, transfer
+    /// function index, and matrix index.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - A mutable reference to a `File` object.
+    /// * `offset` - The offset of the colr atom as a `usize`.
+    ///
+    /// # Returns
+    ///
+    /// An `io::Result` indicating whether the operation was successful or not.
+    fn construct_colr_atom(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
+        self.colr_atom.offset = offset as u64;
 
-            let mut size_buf = [0; 4];
-            file.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
-            file.read_exact(&mut size_buf)?;
-            self.colr_atom.size = u32::from_be_bytes(size_buf);
+        let mut size_buf = [0; 4];
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset))?;
+        file.read_exact(&mut size_buf)?;
+        self.colr_atom.size = u32::from_be_bytes(size_buf);
 
-            let mut nclc_buf = [0; 2];
-            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
-            file.read_exact(&mut nclc_buf)?;
-            self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
+        let mut nclc_buf = [0; 2];
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 12))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.primary_index = u16::from_be_bytes(nclc_buf);
 
-            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
-            file.read_exact(&mut nclc_buf)?;
-            self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 14))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.transfer_function_index = u16::from_be_bytes(nclc_buf);
 
-            file.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
-            file.read_exact(&mut nclc_buf)?;
-            self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
+        file.seek(io::SeekFrom::Start(self.colr_atom.offset + 16))?;
+        file.read_exact(&mut nclc_buf)?;
+        self.colr_atom.matrix_index = u16::from_be_bytes(nclc_buf);
 
-            self.colr_atom.matched = true;
+        self.colr_atom.matched = true;
 
-            Ok(())
-        }
+        Ok(())
+    }
 
+    /// Constructs a gama atom.
+    ///
+    /// Based on whether the four bytes before the gama
+    /// offset/position candidates are in a specific pattern (that is: `0x00, 0x00,
+    /// 0x00, 0x0c` which is the size of gama atom) to determine whether it's a real
+    /// offset of gama atom.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - A mutable reference to a `File` instance.
+    /// * `offset` - The offset of the gama atom in the file.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an `io::Result` in case of an I/O error occurring when
+    /// seeking file or read bytes from file..
     fn construct_gama_atom(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
         self.gama_atom.offsets.push(offset as u64);
 
@@ -156,6 +172,18 @@ impl Video {
         Ok(())
     }
 
+    /// Constructs a ProRes frame from a file at a given offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - A mutable reference to a `File` object.
+    /// * `offset` - The offset in bytes from the start of the file where the frame is
+    ///   located.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an `io::Result` in case of any I/O errors that occur while
+    /// reading from the file.
     fn construct_prores_frame(&mut self, file: &mut File, offset: usize) -> io::Result<()> {
         let mut frame = ProResFrame::new();
         frame.offset = offset as u64;
