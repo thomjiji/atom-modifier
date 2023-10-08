@@ -13,11 +13,13 @@
 ---
 
 1-1-1 => 1-2-1:
+
 - [-] add gama atom
 	- [-] add gama value: 2.4, 2.2, etc.
 - [x] change transfer function index to 2 (unspecified)
 
 1-2-1 => 1-1-1 or others:
+
 - [-] remove gama atom (if present).
 - [x] change transfer function index to 1
 
@@ -30,3 +32,58 @@
 ```
 cargo run --release -- -i <file_path> -p 1 -t 1 -m 1 -g 0
 ```
+
+## Atom hierarchy
+
+- ftyp
+- wide
+- mdat
+- moov:
+  - mvhd
+  - trak:
+    - tkhd (track header atom)
+    - edts
+      - elst
+    - tref
+      - tmcd
+    - mdia (media atom):
+      - mdhd
+      - hdlr
+      - minf:
+        - vmhd
+        - hdlr
+        - dinf
+          - dref
+        - stbl:
+          - stsd:
+            - fiel
+            - colr
+            - pasp
+            - gama ()
+          - stts
+          - stsc
+          - stsz
+          - stco
+  - trak:
+  	- tkhd
+  	- edts
+  	- mdia
+    	- mdhd
+    	- hdlr
+    	- minf
+      	- gmhd:
+        	- gmin
+        	- text
+        	- tmcd
+      	- hdlr
+      	- dinf:
+          	- dref
+        	- stbl:
+          	- stsd
+          	- stts
+          	- stsc
+          	- stsz
+          	- stco
+	- udta:
+	- meta:
+- free
