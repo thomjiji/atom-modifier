@@ -41,8 +41,8 @@ enum ColorParameterType {
 #[derive(Default, Debug, PartialEq)]
 struct ColrAtom {
     size: u32,
-    _color_parameter_type: ColorParameterType,
     offset: u64,
+    _color_parameter_type: ColorParameterType,
     primary_index: u16,
     transfer_function_index: u16,
     matrix_index: u16,
@@ -52,22 +52,22 @@ struct ColrAtom {
 #[derive(Default, Debug, PartialEq)]
 struct GamaAtom {
     size: u32,
-    // The actual gama value: for example 2.4, 2.2, etc (It looks like this in
-    // hexadecimal form: 0x00, 0x02, 0x66, 0x66).
-    gama_value: u32,
     // gama atom candidates
     offsets: Vec<u64>,
     // What is the real gama offset? As long as the four bytes before the gama
     // offset/position candidates are in a specific pattern, i.e. like this: 0x00, 0x00,
     // 0x00, 0x0c (It indicates the size of the gama atom, 12).
     the_actual_gama_offset: u64,
+    // The actual gama value: for example 2.4, 2.2, etc (It looks like this in
+    // hexadecimal form: 0x00, 0x02, 0x66, 0x66).
+    gama_value: u32,
     matched: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
 struct ProResFrame {
-    offset: u64,
     frame_size: u32,
+    offset: u64,
     _frame_id: f32, // if the value of it is -1.0, it means it's not a icpf frame.
     frame_header_size: u16,
     color_primaries: u8,
