@@ -1,7 +1,8 @@
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Seek, Write};
+
 use aho_corasick::AhoCorasick;
 use clap::Parser;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, self, Seek, Write};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -302,7 +303,7 @@ impl Video {
             && self.gama_atom.the_actual_gama_offset != 0
             && target_gama_value != -1.0
         {
-            let new_gama_value = Self::float_to_fixed_point_bytes(target_gama_value);
+            let new_gama_value = Self::float_to_bytes(target_gama_value);
             file.seek(io::SeekFrom::Start(
                 video.gama_atom.the_actual_gama_offset + 8,
             ))?;
@@ -312,20 +313,82 @@ impl Video {
         Ok(())
     }
 
-    fn float_to_fixed_point_bytes(input_gama_value: f32) -> [u8; 4] {
-        let fixed_value = (input_gama_value * 65536_f32) as i32;
+    /// Converts a floating point number to a byte array.
+    ///
+    /// This function takes a 32-bit floating point number, converts it to a fixed-point
+    /// number with 16 fractional bits, then changes the fixed-point number to a
+    /// big-endian i32, and finally, represents the i32 as a byte array.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_gama_value` - A 32-bit floating point number to be converted.
+    ///
+    /// # Returns
+    ///
+    /// A 4 bytes array which represents the input floating point number.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crate::atom_modifier::Video;
+    ///
+    /// let float_value = 2.2;
+    /// let bytes = Video::float_to_bytes(float_value);
+    /// assert_eq!(bytes, [0x00, 0x02, 0x33, 0x33]);
+    /// ```
+    pub fn float_to_bytes(input_gama_value: f32) -> [u8; 4] {
+        // Left shift 1 by 16 bits. This is equivalent to multiplying by 2^16 (1 * 2^16).
+        let fixed_value = (input_gama_value * (1 << 16) as f32) as i32;
         fixed_value.to_be_bytes()
     }
 
-    fn _fixed_point_hex_to_float(input_gama_value: u32) -> f64 {
-        input_gama_value as f64 / 65536_f64
+    /// Converts a byte array to a floating point number.
+    ///
+    /// This function takes a 4-byte array, interprets it as a big-endian i32, then
+    /// interprets that i32 as a fixed-point number with 16 fractional bits, and finally
+    /// converts that to a 32-bit floating point number.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - An array of 4 bytes which represent a big-endian i32 and
+    /// subsequently a fixed-point number with 16 fractional bits.
+    ///
+    /// # Returns
+    ///
+    /// A 32-bit floating point number representation of the input byte array.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crate::atom_modifier::Video;
+    ///
+    /// let bytes = [0x00, 0x02, 0x66, 0x66];
+    /// let float_value = Video::bytes_to_float(bytes);
+    /// assert_eq!(float_value, 2.4);
+    /// ```
+    pub fn bytes_to_float(bytes: [u8; 4]) -> f32 {
+        let fixed_value = i32::from_be_bytes(bytes);
+        // TODO: deal with floating point rounding errors here.
+        (fixed_value as f32 / (1 << 16) as f32).round_to_decimals(2)
+    }
+}
+
+trait RoundTo {
+    fn round_to_decimals(&self, num: i32) -> f32;
+}
+
+impl RoundTo for f32 {
+    fn round_to_decimals(&self, num: i32) -> f32 {
+        let multiplier = 10f32.powi(num);
+        (self * multiplier).round() / multiplier
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::ColorParameterType::Nclc;
+
+    use super::*;
 
     #[test]
     fn test_decode() {

@@ -56,10 +56,11 @@ cargo run --release -- -i <file_path> -p 1 -t 1 -m 1 -g 0
           - dref
         - stbl:
           - stsd:
-            - fiel
-            - colr
-            - pasp
-            - gama ()
+            - apcn / avc1 / hev1
+              - fiel
+              - colr
+              - pasp
+              - gama ()
           - stts
           - stsc
           - stsz
