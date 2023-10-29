@@ -1,4 +1,4 @@
-## Improvement needed:
+## Improvement pending
 
 - [x] error handling
 - [-] handling gama value write and read
