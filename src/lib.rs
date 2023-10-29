@@ -29,7 +29,7 @@ pub struct Args {
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
 static GAMA_ATOM_HEADER: [u8; 4] = [0x67, 0x61, 0x6d, 0x61]; // "gama"
-static FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
+static PRORES_FRAME_HEADER: [u8; 4] = [0x69, 0x63, 0x70, 0x66]; // "icpf"
 
 #[derive(Default, Debug, PartialEq)]
 enum ColorParameterType {
@@ -241,7 +241,7 @@ impl Video {
     pub fn decode(&mut self, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let file = OpenOptions::new().read(true).open(file_path)?;
 
-        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, FRAME_HEADER];
+        let search_patterns = [COLR_ATOM_HEADER, GAMA_ATOM_HEADER, PRORES_FRAME_HEADER];
         let ac = AhoCorasick::new(search_patterns)?;
 
         // error of result is std::io::Error
