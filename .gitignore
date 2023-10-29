@@ -2,7 +2,5 @@
 .idea/
 **/*.DS_Store
 
-known_issue.md
 *.log
 .vscode/
-notes.md
