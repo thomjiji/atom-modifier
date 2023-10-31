@@ -10,16 +10,16 @@ pub struct Args {
     #[arg(short, long = "input-file-path", value_name = "FILE")]
     pub input_file_path: String,
 
-    #[arg(short, long = "primary", value_name = "INDEX_VALUE")]
+    #[arg(short, long = "color-primaries", value_name = "INDEX_VALUE")]
     /// Change the "color primaries index" to <INDEX_VALUE>
     pub primary_index: u8,
 
-    #[arg(short, long = "transfer-function", value_name = "INDEX_VALUE")]
+    #[arg(short, long = "transfer-characteristics", value_name = "INDEX_VALUE")]
     /// Change the "transfer characteristics index" to <INDEX_VALUE>
     pub transfer_function_index: u8,
 
-    #[arg(short, long = "matrix", value_name = "INDEX_VALUE")]
-    /// Change the "matrix coeffients index" to <INDEX_VALUE>
+    #[arg(short, long = "matrix-coefficients", value_name = "INDEX_VALUE")]
+    /// Change the "matrix coefficients index" to <INDEX_VALUE>
     pub matrix_index: u8,
 
     /// Change the Gamma value to <GAMA_VALUE> if gama atom present
