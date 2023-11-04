@@ -1,14 +1,63 @@
-use clap::Parser;
 use std::fs::OpenOptions;
+use std::io;
 use std::io::Write;
-use std::time::Instant;
+use std::{path::Path, time::Instant};
+
+use clap::Parser;
 
 use atom_modifier::Args;
 use atom_modifier::Video;
 
+/// Creates a backup file for the given input file path. The backup file name will be in
+/// the format "{filename}_Original.{ext}".
+///
+/// If a file with that name already exists, the function will append a suffix to the
+/// filename until it finds a unique name.
+///
+/// # Arguments
+///
+/// * `input_file_path` - A reference to the path of the input file.
+///
+/// # Returns
+///
+/// A `Result` containing `()` if the operation succeeds, or an `io::Error` if the
+/// operation fails.
+fn create_backup_file(input_file_path: &Path) -> io::Result<()> {
+    let original_filename = input_file_path
+        .file_stem()
+        .and_then(|os_str| os_str.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to process the filename"))?;
+
+    let original_extension = input_file_path
+        .extension()
+        .and_then(|os_str| os_str.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to retrieve file extension"))?;
+
+    // Initial filename
+    let mut new_filename = format!("{}_Original.{}", original_filename, original_extension);
+    let mut backup_file_path = input_file_path.with_file_name(&new_filename);
+
+    // Check if file exists and update the name
+    let mut suffix = 1;
+    while backup_file_path.exists() {
+        new_filename = format!(
+            "{}_Original_{}.{}",
+            original_filename, suffix, original_extension
+        );
+        backup_file_path = input_file_path.with_file_name(&new_filename);
+        suffix += 1;
+    }
+
+    // Copy the file
+    std::fs::copy(input_file_path, &backup_file_path)?;
+
+    Ok(())
+}
+
 fn main() {
     let args = Args::parse();
 
+    // Decoding
     let now = Instant::now();
     let mut video = Video::default();
     video
@@ -25,6 +74,9 @@ fn main() {
         now.elapsed()
     );
 
+    // Make a backup of the original file name as "<filename>_Original.<ext>".
+    create_backup_file(Path::new(&args.input_file_path)).unwrap();
+
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -37,6 +89,7 @@ fn main() {
             std::process::exit(1);
         });
 
+    // Encoding
     let now = Instant::now();
     video
         .encode(
@@ -56,6 +109,7 @@ fn main() {
         now.elapsed()
     );
 
+    // Logging
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)

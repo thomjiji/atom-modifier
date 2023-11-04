@@ -237,7 +237,7 @@ impl Video {
     ///
     /// # Notes
     ///
-    /// This method only needs file has read permission.
+    /// This method only needs read access to the file.
     pub fn decode(&mut self, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let file = OpenOptions::new().read(true).open(file_path)?;
 
