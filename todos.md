@@ -5,10 +5,10 @@
 	- [x] write
 	- [-] read — read 4 bytes as a decimal number is not bad at this point. So put it aside for now.
 - [ ] add gama atom
-- [x] info print (colr atom, gama value…) — It should not be our focus. For info printing, users can use mediainfo instead.
+- [x] info print (colr atom, gama value...) — It should not be our focus. For info printing, users can use Mediainfo instead.
 - [ ] write tests
 - [ ] improve the looking of `--help` message printing (tweak clap).
-- [ ] add option for not overwriting the original file but instead generate a copy, then do the colr atom, gama atom and frames modification things.
+- [x] add option for not overwriting the original file but instead generate a copy, then do the colr atom, gama atom and frames modification things.
 
 ---
 
