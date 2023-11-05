@@ -5,21 +5,31 @@ If you want to modify atom, here are some [other tools](https://thomjiji.github.
 I also posted my notes on hacking atoms of Quicktime File Format on [my blog](https://thomjiji.github.io/posts/2023-09-18_parse_quicktime), you can check it out if you like.
 
 ```
-Usage: atom_modifier [OPTIONS] --input-file-path <FILE> --primary <INDEX_VALUE> --transfer-function <INDEX_VALUE> --matrix <INDEX_VALUE>
+This program allows you to modify the color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file. Before do the modification, it will create a backup of the input file.
+
+Usage: atom_modifier [OPTIONS] --input-file-path <FILE> --color-primaries <INDEX_VALUE> --transfer-characteristics <INDEX_VALUE> --matrix-coefficients <INDEX_VALUE>
 
 Options:
--i, --input-file-path <FILE>
+  -i, --input-file-path <FILE>
+          The path to the input file
 
--p, --primary <INDEX_VALUE>
-        Change the "color primaries index" to <INDEX_VALUE>
--t, --transfer-function <INDEX_VALUE>
-        Change the "transfer characteristics index" to <INDEX_VALUE>
--m, --matrix <INDEX_VALUE>
-        Change the "matrix coeffients index" to <INDEX_VALUE>
--g, --gama-value <GAMA_VALUE>
-        Change the Gamma value to <GAMA_VALUE> if gama atom present [default: -1]
--h, --help
-        Print help
--V, --version
-        Print version
+  -p, --color-primaries <INDEX_VALUE>
+          Change the "color primaries index" to <INDEX_VALUE>
+
+  -t, --transfer-characteristics <INDEX_VALUE>
+          Change the "transfer characteristics index" to <INDEX_VALUE>
+
+  -m, --matrix-coefficients <INDEX_VALUE>
+          Change the "matrix coefficients index" to <INDEX_VALUE>
+
+  -g, --gama-value <GAMA_VALUE>
+          The gamma value to set. If not present, defaults to -1.0
+
+          [default: -1]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
