@@ -26,12 +26,12 @@ fn create_backup_file(input_file_path: &Path) -> io::Result<()> {
     let original_filename = input_file_path
         .file_stem()
         .and_then(|os_str| os_str.to_str())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to process the filename"))?;
+        .expect("there should be a filename.");
 
     let original_extension = input_file_path
         .extension()
         .and_then(|os_str| os_str.to_str())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to retrieve file extension"))?;
+        .expect("there should be an extension in the input file.");
 
     // Initial filename
     let mut new_filename = format!("{}_Original.{}", original_filename, original_extension);
@@ -75,7 +75,8 @@ fn main() {
     );
 
     // Make a backup of the original file name as "<filename>_Original.<ext>".
-    create_backup_file(Path::new(&args.input_file_path)).unwrap();
+    create_backup_file(Path::new(&args.input_file_path))
+        .expect("encountered an error while creating a backup of input file");
 
     let mut file = OpenOptions::new()
         .read(true)
