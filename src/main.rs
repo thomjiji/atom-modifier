@@ -23,27 +23,50 @@ use atom_modifier::Video;
 /// A `Result` containing `()` if the operation succeeds, or an `io::Error` if the
 /// operation fails.
 fn create_backup_file(input_file_path: &Path) -> io::Result<()> {
-    let original_filename = input_file_path
+    let original_stem = input_file_path
         .file_stem()
-        .and_then(|os_str| os_str.to_str())
-        .expect("there should be a filename.");
+        .and_then(|os_str| os_str.to_str());
 
-    let original_extension = input_file_path
+    let original_ext = input_file_path
         .extension()
-        .and_then(|os_str| os_str.to_str())
-        .expect("there should be an extension in the input file.");
+        .and_then(|os_str| os_str.to_str());
 
-    // Initial filename
-    let mut new_filename = format!("{}_Original.{}", original_filename, original_extension);
-    let mut backup_file_path = input_file_path.with_file_name(&new_filename);
+    let mut backup_file_path;
+    let mut new_filename;
+    match (original_stem, original_ext) {
+        (None, None) => {
+            new_filename = String::from("Original");
+            backup_file_path = input_file_path.with_file_name(&new_filename);
+        }
+        (None, Some(ext)) => {
+            new_filename = format!("Original.{}", ext);
+            backup_file_path = input_file_path.with_file_name(&new_filename);
+        }
+        (Some(stem), None) => {
+            new_filename = format!("{}_Original", stem);
+            backup_file_path = input_file_path.with_file_name(&new_filename);
+        }
+        (Some(stem), Some(ext)) => {
+            new_filename = format!("{}_Original.{}", stem, ext);
+            backup_file_path = input_file_path.with_file_name(&new_filename);
+        }
+    };
 
-    // Check if file exists and update the name
     let mut suffix = 1;
     while backup_file_path.exists() {
-        new_filename = format!(
-            "{}_Original_{}.{}",
-            original_filename, suffix, original_extension
-        );
+        new_filename = match original_ext {
+            None => format!(
+                "{}_Original_{}",
+                original_stem.unwrap_or("Original"),
+                suffix
+            ),
+            Some(ext) => format!(
+                "{}_Original_{}.{}",
+                original_stem.unwrap_or("Original"),
+                suffix,
+                ext
+            ),
+        };
         backup_file_path = input_file_path.with_file_name(&new_filename);
         suffix += 1;
     }
