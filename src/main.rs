@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::Write;
@@ -22,56 +23,39 @@ use atom_modifier::Video;
 ///
 /// A `Result` containing `()` if the operation succeeds, or an `io::Error` if the
 /// operation fails.
-fn create_backup_file(input_file_path: &Path) -> io::Result<()> {
+fn backup_input_file(input_file_path: &Path) -> io::Result<()> {
+    // Extract the stem (filename without extension) from the input file path
     let original_stem = input_file_path
         .file_stem()
-        .and_then(|os_str| os_str.to_str());
+        .and_then(OsStr::to_str)
+        .unwrap_or("Original");
 
+    // Extract the extension from the input file path
     let original_ext = input_file_path
         .extension()
-        .and_then(|os_str| os_str.to_str());
+        .and_then(OsStr::to_str);
 
-    let mut backup_file_path;
-    let mut new_filename;
-    match (original_stem, original_ext) {
-        (None, None) => {
-            new_filename = String::from("Original");
-            backup_file_path = input_file_path.with_file_name(&new_filename);
-        }
-        (None, Some(ext)) => {
-            new_filename = format!("Original.{}", ext);
-            backup_file_path = input_file_path.with_file_name(&new_filename);
-        }
-        (Some(stem), None) => {
-            new_filename = format!("{}_Original", stem);
-            backup_file_path = input_file_path.with_file_name(&new_filename);
-        }
-        (Some(stem), Some(ext)) => {
-            new_filename = format!("{}_Original.{}", stem, ext);
-            backup_file_path = input_file_path.with_file_name(&new_filename);
-        }
+    // Create the initial backup file name
+    let mut new_filename = match original_ext {
+        Some(ext) => format!("{}_Original.{}", original_stem, ext),
+        None => format!("{}_Original", original_stem),
     };
 
+    // Create the initial backup file path
+    let mut backup_file_path = input_file_path.with_file_name(&new_filename);
+
+    // If a file with the backup file name already exists, append a suffix to the filename
     let mut suffix = 1;
     while backup_file_path.exists() {
         new_filename = match original_ext {
-            None => format!(
-                "{}_Original_{}",
-                original_stem.unwrap_or("Original"),
-                suffix
-            ),
-            Some(ext) => format!(
-                "{}_Original_{}.{}",
-                original_stem.unwrap_or("Original"),
-                suffix,
-                ext
-            ),
+            Some(ext) => format!("{}_Original_{}.{}", original_stem, suffix, ext),
+            None => format!("{}_Original_{}", original_stem, suffix),
         };
         backup_file_path = input_file_path.with_file_name(&new_filename);
         suffix += 1;
     }
 
-    // Copy the file
+    // Copy the file to the backup file path
     std::fs::copy(input_file_path, &backup_file_path)?;
 
     Ok(())
@@ -98,7 +82,7 @@ fn main() {
     );
 
     // Make a backup of the original file name as "<filename>_Original.<ext>".
-    create_backup_file(Path::new(&args.input_file_path))
+    backup_input_file(Path::new(&args.input_file_path))
         .expect("encountered an error while creating a backup of input file");
 
     let mut file = OpenOptions::new()
