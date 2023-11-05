@@ -79,9 +79,11 @@ fn main() {
         now.elapsed()
     );
 
-    // Make a backup of the original file name as "<filename>_Original.<ext>".
-    backup_input_file(Path::new(&args.input_file_path))
-        .expect("encountered an error while creating a backup of input file");
+    if !args.modify_in_place {
+        // Make a backup of the original file name as "<filename>_Original.<ext>".
+        backup_input_file(Path::new(&args.input_file_path))
+            .expect("encountered an error while creating a backup of input file");
+    }
 
     let mut file = OpenOptions::new()
         .read(true)

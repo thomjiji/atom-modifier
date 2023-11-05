@@ -31,6 +31,10 @@ pub struct Args {
     #[arg(short, long = "gama-value", default_value_t = -1.0)]
     /// The gamma value to set. If not present, defaults to -1.0
     pub gama_value: f32,
+
+    #[arg(long = "modify-in-place", default_value_t = false)]
+    /// If provided, modify the input file in-place. Otherwise, create a backup of input file. Defaults to false (create backup).
+    pub modify_in_place: bool,
 }
 
 static COLR_ATOM_HEADER: [u8; 4] = [0x63, 0x6f, 0x6c, 0x72]; // "colr"
