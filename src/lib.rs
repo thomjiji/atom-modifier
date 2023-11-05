@@ -5,9 +5,15 @@ use aho_corasick::AhoCorasick;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author,
+    version,
+    about = "Modify color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file.",
+    long_about = "This program allows you to modify the color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file. Before do the modification, it will create a backup of the input file."
+)]
 pub struct Args {
     #[arg(short, long = "input-file-path", value_name = "FILE")]
+    /// The path to the input file
     pub input_file_path: String,
 
     #[arg(short, long = "color-primaries", value_name = "INDEX_VALUE")]
@@ -22,8 +28,8 @@ pub struct Args {
     /// Change the "matrix coefficients index" to <INDEX_VALUE>
     pub matrix_index: u8,
 
-    /// Change the Gamma value to <GAMA_VALUE> if gama atom present
     #[arg(short, long = "gama-value", default_value_t = -1.0)]
+    /// The gamma value to set. If not present, defaults to -1.0
     pub gama_value: f32,
 }
 

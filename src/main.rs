@@ -31,9 +31,7 @@ fn backup_input_file(input_file_path: &Path) -> io::Result<()> {
         .unwrap_or("Original");
 
     // Extract the extension from the input file path
-    let original_ext = input_file_path
-        .extension()
-        .and_then(OsStr::to_str);
+    let original_ext = input_file_path.extension().and_then(OsStr::to_str);
 
     // Create the initial backup file name
     let mut new_filename = match original_ext {
