@@ -3,25 +3,22 @@ use std::ops::RangeInclusive;
 use clap::{command, Parser};
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "atom_modifier",
-    author = "thomjiji <noadstrackers@duck.com>",
-    version = "0.0.1"
-)]
+#[command(name = "atom_modifier", author = "thomjiji", version = "0.0.1")]
 #[command(
     about = "Modify color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file.",
     long_about = "This program allows you to modify the color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file. Before do the modification, it will create a backup of the input file."
 )]
 #[command(next_line_help = true)]
 pub struct Args {
-    #[arg(short, long = "input-file-path", value_name = "FILE", required = true)]
     /// The path to the input file
+    #[arg(short, long = "input-file-path", value_name = "FILE", required = true)]
     pub input_file_path: String,
 
-    #[arg(short, long = "color-primaries", value_name = "INDEX_VALUE", required = true, value_parser = color_primaries_value_check)]
     /// Change the "color primaries index" to <INDEX_VALUE>
+    #[arg(short, long = "color-primaries", value_name = "INDEX_VALUE", required = true, value_parser = color_primaries_value_check)]
     pub primary_index: u8,
 
+    /// Change the "transfer characteristics index" to <INDEX_VALUE>
     #[arg(
         short,
         long = "transfer-characteristics",
@@ -29,9 +26,9 @@ pub struct Args {
         required = true,
         value_parser = transfer_characteristics_value_check,
     )]
-    /// Change the "transfer characteristics index" to <INDEX_VALUE>
     pub transfer_function_index: u8,
 
+    /// Change the "matrix coefficients index" to <INDEX_VALUE>
     #[arg(
         short,
         long = "matrix-coefficients",
@@ -39,15 +36,19 @@ pub struct Args {
         required = true,
         value_parser = matrix_coefficients_value_check,
     )]
-    /// Change the "matrix coefficients index" to <INDEX_VALUE>
     pub matrix_index: u8,
 
-    #[arg(short, long = "gama-value", default_value_t = -1.0, required = false)]
     /// The gamma value to set. If not present, defaults to -1.0
+    #[arg(short, long = "gama-value", default_value_t = -1.0, required = false)]
     pub gama_value: f32,
 
-    #[arg(long = "modify-in-place", default_value_t = false, required = false)]
     /// If passed, modify the input file in-place. Otherwise, create a backup of input file. Defaults to false (create backup).
+    #[arg(
+        short = 'I',
+        long = "modify-in-place",
+        default_value_t = false,
+        required = false
+    )]
     pub modify_in_place: bool,
 }
 
@@ -112,16 +113,13 @@ const MATRIX_NAMES: [&str; 15] = [
     "Rec. ITU-R BT.2100-0 ICTCP",
 ];
 
-// Function to retrieve the name by index
 fn get_color_primary_name(index: u8) -> Option<&'static str> {
     COLOR_PRIMARY_NAMES.get(index as usize).copied()
 }
 
-// Function to retrieve the name by index
 fn get_transfer_function_name(index: u8) -> Option<&'static str> {
     TRANSFER_FUNCTION_NAMES.get(index as usize).copied()
 }
-// Function to retrieve the name by index
 fn get_matrix_name(index: u8) -> Option<&'static str> {
     MATRIX_NAMES.get(index as usize).copied()
 }
