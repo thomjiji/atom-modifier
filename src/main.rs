@@ -6,7 +6,7 @@ use std::{path::Path, time::Instant};
 
 use clap::Parser;
 
-use atom_modifier::Args;
+use atom_modifier::args::Args;
 use atom_modifier::Video;
 
 /// Creates a backup file for the given input file path. The backup file name will be in
