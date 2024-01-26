@@ -72,7 +72,6 @@ const COLOR_PRIMARY_NAMES: [&str; 13] = [
     "P3 D65",
 ];
 
-// Define constants
 const TRANSFER_FUNCTION_NAMES: [&str; 19] = [
     "Reserved",
     "ITU-R BT.709",
