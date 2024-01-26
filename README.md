@@ -5,31 +5,25 @@ If you want to modify atom, here are some [other tools](https://thomjiji.github.
 I also posted my notes on hacking atoms of Quicktime File Format on [my blog](https://thomjiji.github.io/blogs/2023/09/parse-quicktime/), you can check it out if you like.
 
 ```
-This program allows you to modify the color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file. Before do the modification, it will create a backup of the input file.
+Modify color primaries, transfer characteristics, matrix coefficients, and gamma value of QuickTime file.
 
 Usage: atom_modifier [OPTIONS] --input-file-path <FILE> --color-primaries <INDEX_VALUE> --transfer-characteristics <INDEX_VALUE> --matrix-coefficients <INDEX_VALUE>
 
 Options:
   -i, --input-file-path <FILE>
           The path to the input file
-
   -p, --color-primaries <INDEX_VALUE>
           Change the "color primaries index" to <INDEX_VALUE>
-
   -t, --transfer-characteristics <INDEX_VALUE>
           Change the "transfer characteristics index" to <INDEX_VALUE>
-
   -m, --matrix-coefficients <INDEX_VALUE>
           Change the "matrix coefficients index" to <INDEX_VALUE>
-
   -g, --gama-value <GAMA_VALUE>
-          The gamma value to set. If not present, defaults to -1.0
-
-          [default: -1]
-
+          The gamma value to set. If not present, defaults to -1.0 [default: -1]
+  -I, --modify-in-place
+          If passed, modify the input file in-place. Otherwise, create a backup of input file. Defaults to false (create backup)
   -h, --help
-          Print help (see a summary with '-h')
-
+          Print help (see more with '--help')
   -V, --version
           Print version
 ```
